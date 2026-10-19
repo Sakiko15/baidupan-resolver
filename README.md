@@ -245,3 +245,17 @@ docker run -d --name baidupan-web -p 8080:80 --restart unless-stopped baidupan-r
 2. **检查 4 位提取码**：确认提取码输入是否正确，注意避免混入前后空格或中英文冒号；
 3. **确认分享的是纯文件而非文件夹**：第三方接口仅支持解析分享链接根目录下的文件；若分享的是**文件夹**，子目录内的文件会被自动忽略或导致解析报错；
 4. **排查原链接是否失效**：在浏览器无痕模式下打开分享链接，确认是否提示“分享文件已取消”或“页面不存在”。
+
+---
+
+### Q: 页面在浏览器中按下 F5 / 刷新有时会变成乱码，该如何彻底解决？
+
+**根本原因**：
+1. **Nginx 响应头缺少 UTF-8 声明**：Nginx 默认未配置 `charset utf-8;`，静态 HTML 片段以无 charset 参数的 `Content-Type: text/html` 返回；
+2. **SPA 片段文件脱离应用骨架**：若历史状态或外部直访直接打开了 `/home.html` 或 `/history.html` 片段文件，由于片段不含完整 `<!doctype>` 与 `<meta charset="utf-8">`，Windows 或国内双核浏览器默认以 GBK 解码 UTF-8 文本导致瞬间乱码，且脱离 SPA 外壳导致全局样式脚本全失。
+
+**四重加固防护架构（已内置）**：
+1. **Nginx 全局强制 UTF-8**：`nginx/default.conf` 全局与 `location ~* \.html$` 均显式声明 `charset utf-8;` 及 `charset_types`；
+2. **SPA 微路由 Hash 归一化**：微路由将地址栏规范化为标准根路径 `/` 与 Hash 路由 `#/history`，浏览器地址栏永远不驻留原始片段文件名，用户在任意页面按下 F5 刷新均请求整站骨架 `/`；
+3. **HTML 片段自愈重定向**：`home.html` 与 `history.html` 顶部置入 `<meta charset="utf-8">` 兜底，并内置微秒级自愈脚本；若用户通过历史书签或直访误入片段，在 0 毫秒内自愈跳转回 SPA 主入口；
+4. **现代化高可用 UI**：升级柔和极光微光背景、毛玻璃卡片与 Motrix 实时连通性探测指示灯。

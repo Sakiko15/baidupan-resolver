@@ -22,6 +22,12 @@ export class Router {
       this.navigate(e.state || this.resolvePage(location.href).name);
     });
 
+    window.addEventListener('hashchange', () => {
+      if (this.wait) return;
+      const current = this.resolvePage(location.href);
+      this.navigate(current.name);
+    });
+
     document.body.addEventListener('click', e => {
       const target = e.target?.closest?.('[href],[data-url]');
       if (!target) return;
@@ -29,7 +35,7 @@ export class Router {
         return;
       }
       const url = target.getAttribute('href') || target.dataset.url;
-      if (!url || url.startsWith('javascript:') || url.startsWith('#')) return;
+      if (!url || url.startsWith('javascript:') || url === '#') return;
 
       // Only intercept internal links
       try {
@@ -47,19 +53,55 @@ export class Router {
     const base = typeof location !== 'undefined' ? location.href : 'http://localhost';
     const url = new URL(urlStr, base);
     url.name = 'home';
-    const path = url.pathname;
-    if (path.length) {
-      const slashIdx = path.lastIndexOf('/');
-      const start = slashIdx === -1 ? 0 : slashIdx + 1;
-      const dotIdx = path.indexOf('.', start);
-      const end = dotIdx === -1 ? path.length : dotIdx;
-      if (start < end) {
-        url.name = path.slice(start, end);
-      }
-      if (!/^[a-z0-9_-]{2,24}$/i.test(url.name) || url.name === 'index') {
-        url.name = 'home';
+
+    // 1. Priority: check hash route (e.g. #/history, #/home, #history, #)
+    let candidate = '';
+    if (url.hash && url.hash.length > 1) {
+      let h = url.hash.slice(1);
+      if (h.startsWith('/')) h = h.slice(1);
+      const qIdx = h.indexOf('?');
+      if (qIdx !== -1) h = h.slice(0, qIdx);
+      const dotIdx = h.indexOf('.');
+      if (dotIdx !== -1) h = h.slice(0, dotIdx);
+      candidate = h.trim();
+    }
+
+    // 2. Fallback: check pathname (e.g. /history.html, /about)
+    if (!candidate) {
+      const path = url.pathname;
+      if (path && path.length) {
+        const slashIdx = path.lastIndexOf('/');
+        const start = slashIdx === -1 ? 0 : slashIdx + 1;
+        const dotIdx = path.indexOf('.', start);
+        const end = dotIdx === -1 ? path.length : dotIdx;
+        if (start < end) {
+          candidate = path.slice(start, end);
+        }
       }
     }
+
+    // 3. Validate candidate name
+    if (candidate && /^[a-z0-9_-]{2,24}$/i.test(candidate) && candidate.toLowerCase() !== 'index') {
+      url.name = candidate;
+    } else {
+      url.name = 'home';
+    }
+
+    // 4. Normalize URL pathname & hash
+    if (candidate && url.pathname.endsWith(`/${candidate}.html`)) {
+      url.pathname = url.pathname.slice(0, -(`${candidate}.html`.length));
+    } else if (candidate && url.pathname.endsWith(`/${candidate}`)) {
+      url.pathname = url.pathname.slice(0, -candidate.length);
+    } else if (url.pathname.endsWith('/index.html')) {
+      url.pathname = url.pathname.slice(0, -('index.html'.length));
+    }
+
+    if (url.name === 'home') {
+      url.hash = '';
+    } else {
+      url.hash = `#/${url.name}`;
+    }
+
     return url;
   }
 

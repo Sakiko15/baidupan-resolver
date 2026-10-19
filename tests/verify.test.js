@@ -969,3 +969,95 @@ describe('14. Invalid Share Error Handling & Share URL Parser Resilience', () =>
     assert.ok(readme.includes('确认分享的是纯文件而非文件夹'), 'README.md should warn about folder limitations');
   });
 });
+
+describe('15. Nginx Charset UTF-8, Hash Routing & Self-Healing Defense', () => {
+  test('nginx/default.conf declares global and location-level charset utf-8 and charset_types', () => {
+    const confPath = path.resolve(baseDir, '../nginx/default.conf');
+    const conf = fs.readFileSync(confPath, 'utf-8');
+    assert.ok(conf.includes('charset utf-8;'), 'nginx should declare charset utf-8');
+    assert.ok(conf.includes('charset_types'), 'nginx should declare charset_types');
+    assert.ok(conf.includes('text/css') && conf.includes('application/json'), 'charset_types should include css and json');
+
+    // Check location ~* \.html$ has charset utf-8;
+    const htmlLocation = conf.slice(conf.indexOf('location ~* \\.html$'));
+    const htmlBlock = htmlLocation.slice(0, htmlLocation.indexOf('}'));
+    assert.ok(htmlBlock.includes('charset utf-8;'), 'location ~* .html$ should explicitly declare charset utf-8;');
+
+    // Check location /assets/ has charset utf-8;
+    const assetsLocation = conf.slice(conf.indexOf('location /assets/'));
+    const assetsBlock = assetsLocation.slice(0, assetsLocation.indexOf('}'));
+    assert.ok(assetsBlock.includes('charset utf-8;'), 'location /assets/ should explicitly declare charset utf-8;');
+  });
+
+  test('Router.resolvePage() normalizes hash routing and strips .html from pathname', () => {
+    const router = new Router();
+
+    // Hash route parsing
+    const resHash = router.resolvePage('http://localhost:5173/#/history');
+    assert.strictEqual(resHash.name, 'history');
+    assert.strictEqual(resHash.hash, '#/history');
+
+    const resHashHtml = router.resolvePage('http://localhost:5173/#/history.html');
+    assert.strictEqual(resHashHtml.name, 'history');
+    assert.strictEqual(resHashHtml.hash, '#/history');
+
+    const resHomeHash = router.resolvePage('http://localhost:5173/#/home');
+    assert.strictEqual(resHomeHash.name, 'home');
+    assert.strictEqual(resHomeHash.hash, '');
+
+    const resSlashHash = router.resolvePage('http://localhost:5173/#/');
+    assert.strictEqual(resSlashHash.name, 'home');
+    assert.strictEqual(resSlashHash.hash, '');
+
+    // Pathname normalization to root with hash representation
+    const resDirectHtml = router.resolvePage('http://localhost:5173/history.html');
+    assert.strictEqual(resDirectHtml.name, 'history');
+    assert.strictEqual(resDirectHtml.pathname, '/');
+    assert.strictEqual(resDirectHtml.hash, '#/history');
+
+    const resDirectHome = router.resolvePage('http://localhost:5173/home.html');
+    assert.strictEqual(resDirectHome.name, 'home');
+    assert.strictEqual(resDirectHome.pathname, '/');
+    assert.strictEqual(resDirectHome.hash, '');
+
+    // Subpath preservation under subdirectory deployment
+    const resSubpathRoot = router.resolvePage('http://localhost:5173/myapp/');
+    assert.strictEqual(resSubpathRoot.pathname, '/myapp/');
+    assert.strictEqual(resSubpathRoot.name, 'home');
+    assert.strictEqual(resSubpathRoot.hash, '');
+
+    const resSubpathHistory = router.resolvePage('http://localhost:5173/myapp/history.html');
+    assert.strictEqual(resSubpathHistory.pathname, '/myapp/');
+    assert.strictEqual(resSubpathHistory.name, 'history');
+    assert.strictEqual(resSubpathHistory.hash, '#/history');
+  });
+
+  test('home.html and history.html contain meta charset utf-8 and self-healing redirect scripts', () => {
+    const home = fs.readFileSync(path.resolve(baseDir, '../home.html'), 'utf-8');
+    const history = fs.readFileSync(path.resolve(baseDir, '../history.html'), 'utf-8');
+
+    assert.ok(home.trimStart().startsWith('<meta charset="utf-8">'), 'home.html must start with meta charset utf-8');
+    assert.ok(home.includes('location.replace('), 'home.html must include self-healing location.replace');
+    assert.ok(home.includes('!window.box'), 'home.html self-healing must check !window.box');
+
+    assert.ok(history.trimStart().startsWith('<meta charset="utf-8">'), 'history.html must start with meta charset utf-8');
+    assert.ok(history.includes('location.replace('), 'history.html must include self-healing location.replace');
+    assert.ok(history.includes('!window.box'), 'history.html self-healing must check !window.box');
+  });
+
+  test('home.html and style.css contain modern UI components and empty state integration', () => {
+    const home = fs.readFileSync(path.resolve(baseDir, '../home.html'), 'utf-8');
+    assert.ok(home.includes('id="motrixStatusPill"'), 'home.html must have #motrixStatusPill');
+    assert.ok(home.includes('id="motrixStatusText"'), 'home.html must have #motrixStatusText');
+    assert.ok(home.includes('id="btnClearUrl"'), 'home.html must have #btnClearUrl');
+    assert.ok(home.includes('id="btnFillSampleUrl"'), 'home.html must have #btnFillSampleUrl');
+    assert.ok(home.includes('id="filesEmptyState"'), 'home.html must have #filesEmptyState');
+    assert.ok(home.includes('id="filesTableContainer"'), 'home.html must have #filesTableContainer');
+
+    const css = fs.readFileSync(path.resolve(baseDir, '../src/style.css'), 'utf-8');
+    assert.ok(css.includes('radial-gradient'), 'style.css must have aurora radial-gradient');
+    assert.ok(css.includes('.glass-card'), 'style.css must have .glass-card');
+    assert.ok(css.includes('.motrix-pill'), 'style.css must have .motrix-pill');
+    assert.ok(css.includes('.status-dot'), 'style.css must have .status-dot');
+  });
+});

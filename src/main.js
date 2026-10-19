@@ -273,6 +273,18 @@ export function showSmartErrorDialog(rawMsg = '', title = '请求失败', onRese
     </div>
   `);
 }
+export function syncFilesDisplay(files) {
+  if (typeof document === 'undefined') return;
+  const emptyState = document.getElementById('filesEmptyState');
+  const tableContainer = document.getElementById('filesTableContainer');
+  const hasFiles = Array.isArray(files) && files.length > 0;
+  if (emptyState) {
+    emptyState.classList.toggle('hidden', hasFiles);
+  }
+  if (tableContainer) {
+    tableContainer.classList.toggle('hidden', !hasFiles);
+  }
+}
 
 // Reactive state proxy for DOM data binding
 const reactiveData = new Proxy(box.data, {
@@ -282,6 +294,9 @@ const reactiveData = new Proxy(box.data, {
         el.dataset.html ??= el.innerHTML;
         el.innerHTML = Array.isArray(value) && value.length === 0 ? '' : tpl(el.dataset.html, value);
       });
+      if (prop === 'files') {
+        syncFilesDisplay(value);
+      }
     }
     return Reflect.set(target, prop, value, receiver);
   },
@@ -701,6 +716,90 @@ function initHomePage() {
     // Clear unrendered template placeholder row from home.html
     reactiveData.files = [];
   }
+  syncFilesDisplay(reactiveData.files);
+
+  // Update Motrix status indicator
+  async function updateMotrixStatusIndicator() {
+    const pill = document.getElementById('motrixStatusPill');
+    const textEl = document.getElementById('motrixStatusText');
+    if (!pill) return;
+    try {
+      const isOnline = await checkConnection();
+      if (isOnline) {
+        pill.className = 'motrix-pill motrix-pill-online';
+        pill.title = 'Motrix RPC 连接正常 (点击修改配置)';
+        if (textEl) textEl.textContent = 'Motrix: 已就绪';
+        const dot = pill.querySelector('.status-dot');
+        if (dot) dot.className = 'status-dot status-dot-online';
+      } else {
+        pill.className = 'motrix-pill motrix-pill-offline';
+        pill.title = 'Motrix 未连接或 RPC 离线 (点击打开配置)';
+        if (textEl) textEl.textContent = 'Motrix: 未连接';
+        const dot = pill.querySelector('.status-dot');
+        if (dot) dot.className = 'status-dot status-dot-offline';
+      }
+    } catch {
+      // Silent fallback
+    }
+  }
+
+  const motrixPill = document.getElementById('motrixStatusPill');
+  if (motrixPill) {
+    motrixPill.addEventListener('click', () => {
+      showConfigDialog(() => {
+        updateMotrixStatusIndicator();
+      });
+    });
+  }
+  updateMotrixStatusIndicator();
+
+  // Clear URL button handler
+  const clearUrlBtn = document.getElementById('btnClearUrl');
+  const updateClearBtn = () => {
+    if (clearUrlBtn) {
+      clearUrlBtn.classList.toggle('hidden', !urlInput.value);
+    }
+  };
+  urlInput.addEventListener('input', updateClearBtn);
+  updateClearBtn();
+
+  if (clearUrlBtn) {
+    clearUrlBtn.addEventListener('click', () => {
+      urlInput.value = '';
+      pwdInput.value = '';
+      state.si.surl = '';
+      state.si.pwd = '';
+      updateClearBtn();
+      urlInput.focus();
+    });
+  }
+
+  // Fill sample link handler
+  const sampleBtn = document.getElementById('btnFillSampleUrl');
+  if (sampleBtn) {
+    sampleBtn.addEventListener('click', () => {
+      urlInput.value = 'https://pan.baidu.com/s/1eRh9eOQ-sample77';
+      pwdInput.value = '6688';
+      state.si.surl = 'eRh9eOQ-sample77';
+      state.si.pwd = '6688';
+      updateClearBtn();
+      toast('已填入测试分享链接示例，点击「打开」即可体验解析');
+    });
+  }
+
+  // Notice collapsible details handler
+  const toggleNoticeBtn = document.getElementById('btnToggleNoticeDetails');
+  const noticeContent = document.getElementById('noticeDetailsContent');
+  const noticeChevron = document.getElementById('noticeChevron');
+  if (toggleNoticeBtn && noticeContent) {
+    toggleNoticeBtn.addEventListener('click', () => {
+      const isHidden = noticeContent.classList.toggle('hidden');
+      if (noticeChevron) {
+        noticeChevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+      }
+    });
+  }
+
   // Reset Sign button handler
   const resetSignBtn = document.getElementById('btnResetSign');
   if (resetSignBtn) {
@@ -709,7 +808,6 @@ function initHomePage() {
       toast(`已重置解析凭证 (Sign: ${newSign.slice(0, 8)}...)`);
     });
   }
-
   // Select all on focus
   urlInput.addEventListener('focus', e => e.target.select());
 
@@ -729,13 +827,16 @@ function initHomePage() {
       pwdInput.value = pwd;
       state.si.pwd = pwd;
     }
+    updateClearBtn();
     urlInput.blur();
   });
 
   // Right-click "打开" button to configure Motrix / Aria2 RPC
   openBtn.addEventListener('contextmenu', e => {
     e.preventDefault();
-    showConfigDialog();
+    showConfigDialog(() => {
+      updateMotrixStatusIndicator();
+    });
   });
 
   // Search button click handler
