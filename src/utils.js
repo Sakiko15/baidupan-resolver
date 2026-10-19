@@ -18,6 +18,11 @@ export function escapeHtml(str) {
 export function escapeShellArg(str) {
   return "'" + String(str ?? '').replace(/'/g, "'\\''") + "'";
 }
+export function buildIdmCommand(url = '', filename = '') {
+  const safeUrl = String(url || '').replaceAll('"', '').replaceAll(/[\r\n]/g, '');
+  const safeFile = String(filename || 'download').replaceAll('"', '').replaceAll(/[\r\n]/g, '');
+  return `idman /d "${safeUrl}" /f "${safeFile}"`;
+}
 
 export function random(len = 16) {
   const arr = new Uint8Array(len);

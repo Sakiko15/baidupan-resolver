@@ -8,7 +8,7 @@ import assert from 'node:assert';
 import { test, describe } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { random, fixpath, cut, tpl, xbody, escapeHtml, escapeShellArg } from '../src/utils.js';
+import { random, fixpath, cut, tpl, xbody, escapeHtml, escapeShellArg, buildIdmCommand } from '../src/utils.js';
 import { parseBaiduShareText } from '../src/main.js';
 import { buildAria2Payload } from '../src/aria2.js';
 import { Router } from '../src/router.js';
@@ -63,6 +63,12 @@ describe('1. Utility Functions & Security Sanitization', () => {
     assert.strictEqual(escapeShellArg('file`id`.mp4'), "'file`id`.mp4'");
     assert.strictEqual(escapeShellArg('file; rm -rf /;'), "'file; rm -rf /;'");
     assert.strictEqual(escapeShellArg("O'Reilly.mp4"), "'O'\\''Reilly.mp4'");
+  });
+  test('buildIdmCommand() constructs valid idman download command and strips quotes and newlines', () => {
+    const cmd = buildIdmCommand('https://d.pcs.baidu.com/file/123" & calc.exe', 'my "cool"\r\nvideo.mp4');
+    assert.strictEqual(cmd, 'idman /d "https://d.pcs.baidu.com/file/123 & calc.exe" /f "my coolvideo.mp4"');
+    assert.strictEqual(buildIdmCommand(null, null), 'idman /d "" /f "download"');
+    assert.strictEqual(buildIdmCommand('https://example.com/dl', ''), 'idman /d "https://example.com/dl" /f "download"');
   });
 
   test('tpl() correctly renders template placeholders and protects against null items and XSS', () => {
@@ -303,5 +309,59 @@ describe('9. Build & Project Configuration Verification', () => {
     assert.ok(readme.includes('### 方式 D：传统 Nginx 宿主机部署'));
     const matches = readme.match(/### 方式 B：/g);
     assert.strictEqual(matches?.length, 1, 'Should not have duplicate "方式 B"');
+  });
+});
+
+describe('10. Baidu 31362 Sign Error Remediation, Direct Download Protection & UX Enhancement', () => {
+  const mainJsPath = path.resolve(baseDir, '../src/main.js');
+  const mainJs = fs.readFileSync(mainJsPath, 'utf-8');
+
+  test('src/main.js contains 31362 sign error explanation, UA copy and IDM parameters logic', () => {
+    assert.ok(mainJs.includes('31362'), 'src/main.js should explicitly mention error code 31362');
+    assert.ok(mainJs.includes('sign error'), 'src/main.js should explain sign error');
+    assert.ok(mainJs.includes('copyUaBtn'), 'src/main.js should have User-Agent copy button handler');
+    assert.ok(mainJs.includes('btnCopyIdm'), 'src/main.js should have IDM command copy button handler');
+    assert.ok(mainJs.includes('confirmBrowserDownload'), 'src/main.js should provide confirmBrowserDownload');
+  });
+
+  test('src/main.js intercepts direct download clicks with confirmBrowserDownload dialog', () => {
+    assert.ok(
+      mainJs.includes("target.closest('.action-browser')") && mainJs.includes('confirmBrowserDownload'),
+      'Action browser click must trigger confirmBrowserDownload rather than unconditional download'
+    );
+  });
+
+  const homeHtmlPath = path.resolve(baseDir, '../home.html');
+  const homeHtml = fs.readFileSync(homeHtmlPath, 'utf-8');
+
+  test('home.html displays 31362 error warning in notice and places Motrix push as first recommendation', () => {
+    assert.ok(homeHtml.includes('sign error (31362)'), 'home.html should warn about 31362 error in notice');
+    assert.ok(homeHtml.includes('User-Agent: netdisk'), 'home.html should specify netdisk UA requirement');
+    const motrixIdx = homeHtml.indexOf('action-motrix');
+    const browserIdx = homeHtml.indexOf('action-browser');
+    assert.ok(motrixIdx > 0 && browserIdx > 0, 'Both action buttons should exist in template');
+    assert.ok(motrixIdx < browserIdx, 'action-motrix should be placed before action-browser as primary recommendation');
+  });
+
+  const readmePath = path.resolve(baseDir, '../README.md');
+  const readme = fs.readFileSync(readmePath, 'utf-8');
+
+  test('README.md contains FAQ chapter explaining 31362 sign error and 4 download schemes', () => {
+    assert.ok(readme.includes('常见问题与下载指南 (FAQ)'));
+    assert.ok(readme.includes('31362'));
+    assert.ok(readme.includes('sign error'));
+    assert.ok(readme.includes('方案一（强烈推荐）：Motrix'));
+    assert.ok(readme.includes('方案二：IDM'));
+    assert.ok(readme.includes('方案三：浏览器安装 User-Agent 切换插件'));
+    assert.ok(readme.includes('方案四：终端 cURL 命令行导出'));
+  });
+
+  const readDocPath = path.resolve(baseDir, '../read.md');
+  const readDoc = fs.readFileSync(readDocPath, 'utf-8');
+
+  test('read.md API spec includes 31362 sign error in error handling section', () => {
+    assert.ok(readDoc.includes('31362'));
+    assert.ok(readDoc.includes('sign error'));
+    assert.ok(readDoc.includes('User-Agent'));
   });
 });

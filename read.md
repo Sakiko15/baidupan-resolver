@@ -137,3 +137,14 @@
 - 提取码输入错误
 - `sign` 与 `uid` 已经存在绑定，不匹配当前组合
 - 解析接口服务异常
+
+### 4.1 常见服务端业务错误
+
+- **错误码 `31362` (`sign error`)**：直链签名校验失败。
+  - **根本原因**：百度网盘开放平台与 PCS 直链服务端强制校验下载请求的 `User-Agent`，要求必须为 `netdisk`（或 `pan.baidu.com`）。
+  - **常见触发场景**：用户直接在现代浏览器（Chrome、Edge、Firefox 等）中打开直链。由于浏览器根据 W3C 规范禁止网页脚本修改原生下载的 `User-Agent`（默认为浏览器的 `Mozilla/5.0...`），百度 PCS 服务端判定请求头与直链签名不匹配，返回 `{"error_code":31362,"error_msg":"sign error"}`。
+  - **排查与解决对策**：
+    1. **使用 Motrix / Aria2 下载（推荐）**：客户端 JSON-RPC 自动携带 `'user-agent': 'netdisk'`，无须任何额外配置即可高速多线程下载；
+    2. **使用 IDM / FDM 等专业下载器**：在下载器设置或新建任务时，将 `User-Agent` 手动指定为 `netdisk`；
+    3. **浏览器插件切换 UA**：安装 User-Agent Switcher 等浏览器扩展，为 `*.baidupcs.com` 域名指定 UA 为 `netdisk`；
+    4. **终端 cURL 命令行**：使用带有 `-A "netdisk"` 参数的命令，如 `curl -L -A "netdisk" -o "文件名" "直链"`。

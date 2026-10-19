@@ -16,6 +16,7 @@ import {
   copyToClipboard,
   escapeHtml,
   escapeShellArg,
+  buildIdmCommand,
 } from './utils.js';
 
 export { escapeShellArg };
@@ -136,11 +137,10 @@ async function resolveDirectLink(fid) {
   directLinkCache.set(fid, result);
   return { ok: true, ...result };
 }
-
 /**
  * Trigger native browser direct download
  */
-function triggerBrowserDownload(url, filename) {
+export function triggerBrowserDownload(url, filename) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename || 'download';
@@ -153,91 +153,59 @@ function triggerBrowserDownload(url, filename) {
 }
 
 /**
- * Show comprehensive download options modal
+ * Prompt confirmation before browser direct download to prevent unexpected 31362 errors
  */
-async function showDownloadOptionsModal(fid, fileName, fileSize) {
-  dialog(`
-    <div class="center flex-col py-6">
-      <div class="loader"></div>
-      <p class="text-sm text-slate-500 mt-4">正在解析文件直链...</p>
-    </div>
-  `);
-
-  const resolved = await resolveDirectLink(fid);
-  if (!resolved.ok) {
-    dialog(`
-      <div class="text-center py-4">
-        <div class="text-red-500 text-3xl mb-2"><i class="bi-exclamation-triangle"></i></div>
-        <h3 class="text-base font-semibold text-slate-800 mb-2">解析失败</h3>
-        <p class="text-sm text-slate-600 mb-4">${escapeHtml(resolved.message)}</p>
-        <button type="button" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-lg" onclick="document.getElementById('liveDialog').close()">关闭</button>
-      </div>
-    `);
-    return;
-  }
-
-  const { url, info } = resolved;
-  const outName = info.out || fileName || '未命名文件';
-  const ua = info['user-agent'] || 'netdisk';
-  const safeOutName = escapeHtml(outName);
-  const safeFileSize = escapeHtml(fileSize || '--');
+export function confirmBrowserDownload({ url, outName, info, onBack }) {
+  const safeOutName = escapeHtml(outName || '未命名文件');
+  const ua = info?.['user-agent'] || 'netdisk';
   const safeUa = escapeHtml(ua);
-  const safeUrl = escapeHtml(url);
-  const curlCmd = `curl -L -A ${escapeShellArg(ua)} -o ${escapeShellArg(outName)} ${escapeShellArg(url)}`;
 
-  const modalEl = document.createElement('div');
-  modalEl.className = 'download-modal space-y-4';
-  modalEl.innerHTML = `
+  const confirmEl = document.createElement('div');
+  confirmEl.className = 'confirm-download-modal space-y-4';
+  confirmEl.innerHTML = `
     <div class="border-b border-slate-200 pb-3">
-      <h3 class="text-base font-bold text-slate-800 truncate" title="${safeOutName}">
-        <i class="bi-file-earmark-arrow-down mr-1.5 text-blue-600"></i>${safeOutName}
+      <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+        <i class="bi-shield-exclamation text-amber-500 text-lg"></i>
+        <span>浏览器直接下载提示 (防 31362 错误)</span>
       </h3>
-      <div class="flex items-center gap-3 text-xs text-slate-500 mt-1">
-        <span>大小: ${safeFileSize} MB</span>
-        <span>User-Agent: ${safeUa}</span>
-      </div>
+      <p class="text-xs text-slate-500 mt-1 truncate" title="${safeOutName}">目标文件：${safeOutName}</p>
     </div>
 
-    <div class="space-y-1.5">
-      <label class="text-xs font-semibold text-slate-700">直链下载地址</label>
-      <div class="relative">
-        <input type="text" readonly value="${safeUrl}" class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2.5 py-2 text-slate-700 select-all pr-16" id="directUrlInput">
-        <button type="button" class="absolute right-1 top-1 bottom-1 px-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs rounded transition flex items-center gap-1" id="copyUrlBtn">
-          <i class="bi-clipboard"></i> 复制
+    <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-2">
+      <div class="font-semibold text-amber-900 flex items-center gap-1.5">
+        <i class="bi-exclamation-triangle-fill text-amber-600"></i>
+        <span>为什么直接下载会报错 sign error (31362)？</span>
+      </div>
+      <p class="text-amber-700 leading-relaxed">
+        百度网盘要求下载请求头必须为 <code>User-Agent: ${safeUa}</code>。普通浏览器点击下载无法修改该请求头（默认为浏览器标识），将返回 <b>{"error_code":31362,"error_msg":"sign error"}</b> 并导致下载失败。
+      </p>
+      <p class="text-amber-700 font-medium">
+        推荐方案：直接使用 Motrix 推送下载，无需任何插件且支持多线程高速断点续传。
+      </p>
+    </div>
+
+    <div class="space-y-2 pt-1">
+      <button type="button" class="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition" id="confirmBtnMotrix">
+        <i class="bi-rocket-takeoff text-sm"></i> 改用 Motrix 推送 (推荐·无报错)
+      </button>
+      <div class="grid grid-cols-2 gap-2">
+        <button type="button" class="flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg transition" id="confirmBtnCopyUaAndDl" title="复制 UA: ${safeUa} 到剪贴板并打开链接">
+          <i class="bi-clipboard-check text-blue-600"></i> 复制 UA 并打开
+        </button>
+        <button type="button" class="flex items-center justify-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded-lg transition" id="confirmBtnDirectDl" title="直接在浏览器新标签页打开下载链接">
+          <i class="bi-box-arrow-up-right text-slate-500"></i> 仍尝试直接打开
         </button>
       </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-2 pt-2">
-      <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg shadow-sm transition" id="btnBrowserDl">
-        <i class="bi-cloud-download text-sm"></i> 浏览器直接下载
-      </button>
-      <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg shadow-sm transition" id="btnMotrixPush">
-        <i class="bi-rocket-takeoff text-sm"></i> 推送到 Motrix / Aria2
-      </button>
-      <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnCopyCurl">
-        <i class="bi-terminal text-sm"></i> 复制 cURL 命令
-      </button>
-      <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnConfigAria2">
-        <i class="bi-gear text-sm"></i> 配置 Aria2 RPC
-      </button>
-    </div>
-
     <div class="text-right pt-2 border-t border-slate-100">
-      <button type="button" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700" id="btnCloseModal">关闭</button>
+      <button type="button" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700" id="confirmBtnBack">
+        ${onBack ? '返回下载选项' : '关闭'}
+      </button>
     </div>
   `;
 
-  modalEl.querySelector('#copyUrlBtn').addEventListener('click', async () => {
-    const ok = await copyToClipboard(url);
-    toast(ok ? '直链已复制到剪贴板' : '复制失败，请手动长按复制');
-  });
-
-  modalEl.querySelector('#btnBrowserDl').addEventListener('click', () => {
-    triggerBrowserDownload(url, outName);
-  });
-
-  modalEl.querySelector('#btnMotrixPush').addEventListener('click', async () => {
+  confirmEl.querySelector('#confirmBtnMotrix').addEventListener('click', async () => {
     const isAlive = await checkConnection();
     if (!isAlive) {
       toast('Motrix 未启动或 RPC 无法连接，正在打开配置');
@@ -253,18 +221,189 @@ async function showDownloadOptionsModal(fid, fileName, fileSize) {
     }
   });
 
-  modalEl.querySelector('#btnCopyCurl').addEventListener('click', async () => {
-    const ok = await copyToClipboard(curlCmd);
-    toast(ok ? 'cURL 下载命令已复制' : '复制失败');
+  confirmEl.querySelector('#confirmBtnCopyUaAndDl').addEventListener('click', async () => {
+    await copyToClipboard(ua);
+    toast(`已复制 User-Agent: ${ua}`);
+    triggerBrowserDownload(url, outName);
   });
 
-  modalEl.querySelector('#btnConfigAria2').addEventListener('click', () => {
-    showConfigDialog();
+  confirmEl.querySelector('#confirmBtnDirectDl').addEventListener('click', () => {
+    triggerBrowserDownload(url, outName);
   });
 
-  modalEl.querySelector('#btnCloseModal').addEventListener('click', xdialog);
+  confirmEl.querySelector('#confirmBtnBack').addEventListener('click', () => {
+    if (onBack) {
+      onBack();
+    } else {
+      xdialog();
+    }
+  });
 
-  dialog(modalEl);
+  dialog(confirmEl);
+}
+
+/**
+ * Show comprehensive download options modal
+ */
+export function showDownloadOptionsModal(fid, fileName, fileSize) {
+  dialog(`
+    <div class="center flex-col py-6">
+      <div class="loader"></div>
+      <p class="text-sm text-slate-500 mt-4">正在解析文件直链...</p>
+    </div>
+  `);
+
+  resolveDirectLink(fid).then(resolved => {
+    if (!resolved.ok) {
+      dialog(`
+        <div class="text-center py-4">
+          <div class="text-red-500 text-3xl mb-2"><i class="bi-exclamation-triangle"></i></div>
+          <h3 class="text-base font-semibold text-slate-800 mb-2">解析失败</h3>
+          <p class="text-sm text-slate-600 mb-4">${escapeHtml(resolved.message)}</p>
+          <button type="button" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-lg" onclick="document.getElementById('liveDialog').close()">关闭</button>
+        </div>
+      `);
+      return;
+    }
+
+    const { url, info } = resolved;
+    const outName = info.out || fileName || '未命名文件';
+    const ua = info['user-agent'] || 'netdisk';
+    const safeOutName = escapeHtml(outName);
+    const safeFileSize = escapeHtml(fileSize || '--');
+    const safeUa = escapeHtml(ua);
+    const safeUrl = escapeHtml(url);
+    const curlCmd = `curl -L -A ${escapeShellArg(ua)} -o ${escapeShellArg(outName)} ${escapeShellArg(url)}`;
+
+    const modalEl = document.createElement('div');
+    modalEl.className = 'download-modal space-y-4';
+    modalEl.innerHTML = `
+      <div class="border-b border-slate-200 pb-3">
+        <h3 class="text-base font-bold text-slate-800 truncate" title="${safeOutName}">
+          <i class="bi-file-earmark-arrow-down mr-1.5 text-blue-600"></i>${safeOutName}
+        </h3>
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 mt-2 pt-2 border-t border-slate-100">
+          <span>大小: <b class="text-slate-700 font-mono">${safeFileSize} MB</b></span>
+          <div class="flex items-center gap-1.5">
+            <span>User-Agent:</span>
+            <code class="px-1.5 py-0.5 bg-slate-100 text-indigo-700 rounded font-mono font-medium">${safeUa}</code>
+            <button type="button" class="px-1.5 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition flex items-center gap-0.5" id="copyUaBtn" title="复制 User-Agent">
+              <i class="bi-clipboard"></i> 复制 UA
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+        <i class="bi-exclamation-triangle-fill text-amber-600 shrink-0 mt-0.5"></i>
+        <div class="space-y-1">
+          <p class="font-semibold text-amber-900">为什么直接下载会报错 sign error (31362)？</p>
+          <p class="text-amber-700 leading-relaxed">
+            百度直链服务端强制校验 <code>User-Agent: netdisk</code>。普通浏览器点击下载无法修改该请求头，会导致签名校验失败。推荐优先使用 Motrix 一键推送；或配合 IDM / 浏览器 UA 插件进行下载。
+          </p>
+        </div>
+      </div>
+
+      <div class="space-y-1.5">
+        <label class="text-xs font-semibold text-slate-700">直链下载地址</label>
+        <div class="relative">
+          <input type="text" readonly value="${safeUrl}" class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2.5 py-2 text-slate-700 select-all pr-16" id="directUrlInput">
+          <button type="button" class="absolute right-1 top-1 bottom-1 px-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs rounded transition flex items-center gap-1" id="copyUrlBtn">
+            <i class="bi-clipboard"></i> 复制
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-2 pt-1">
+        <button type="button" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-sm font-semibold rounded-lg shadow-sm transition" id="btnMotrixPush">
+          <i class="bi-rocket-takeoff text-base"></i>
+          <span>推送到 Motrix / Aria2 (推荐·自动携带 UA)</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnBrowserDl" title="需注意 UA 校验限制">
+            <i class="bi-cloud-download text-sm text-blue-600"></i> 浏览器直接下载
+          </button>
+          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnCopyIdm">
+            <i class="bi-download text-sm text-emerald-600"></i> 复制 IDM 参数
+          </button>
+          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnCopyCurl">
+            <i class="bi-terminal text-sm text-purple-600"></i> 复制 cURL 命令
+          </button>
+          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnConfigAria2">
+            <i class="bi-gear text-sm text-slate-600"></i> 配置 Aria2 RPC
+          </button>
+        </div>
+      </div>
+
+      <div class="text-right pt-2 border-t border-slate-100">
+        <button type="button" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700" id="btnCloseModal">关闭</button>
+      </div>
+    `;
+
+    modalEl.querySelector('#copyUaBtn').addEventListener('click', async () => {
+      const ok = await copyToClipboard(ua);
+      toast(ok ? `User-Agent (${ua}) 已复制` : '复制失败');
+    });
+
+    modalEl.querySelector('#copyUrlBtn').addEventListener('click', async () => {
+      const ok = await copyToClipboard(url);
+      toast(ok ? '直链已复制到剪贴板' : '复制失败，请手动长按复制');
+    });
+
+    modalEl.querySelector('#btnBrowserDl').addEventListener('click', () => {
+      confirmBrowserDownload({
+        url,
+        outName,
+        info,
+        onBack: () => showDownloadOptionsModal(fid, fileName, fileSize),
+      });
+    });
+
+    modalEl.querySelector('#btnMotrixPush').addEventListener('click', async () => {
+      const isAlive = await checkConnection();
+      if (!isAlive) {
+        toast('Motrix 未启动或 RPC 无法连接，正在打开配置');
+        showConfigDialog();
+        return;
+      }
+      const pushRes = await addDownloadTask(url, info);
+      if (pushRes.code === 0) {
+        toast('已成功推送到 Motrix 下载队列！');
+        xdialog();
+      } else {
+        toast(`推送失败: ${pushRes.message}`);
+      }
+    });
+
+    modalEl.querySelector('#btnCopyIdm').addEventListener('click', async () => {
+      const idmCmd = buildIdmCommand(url, outName);
+      const ok = await copyToClipboard(idmCmd);
+      toast(ok ? 'IDM 命令行参数已复制 (请确保 IDM 的 UA 设置为 netdisk)' : '复制失败');
+    });
+
+    modalEl.querySelector('#btnCopyCurl').addEventListener('click', async () => {
+      const ok = await copyToClipboard(curlCmd);
+      toast(ok ? 'cURL 下载命令已复制' : '复制失败');
+    });
+
+    modalEl.querySelector('#btnConfigAria2').addEventListener('click', () => {
+      showConfigDialog();
+    });
+
+    modalEl.querySelector('#btnCloseModal').addEventListener('click', xdialog);
+
+    dialog(modalEl);
+  }).catch(err => {
+    dialog(`
+      <div class="text-center py-4">
+        <div class="text-red-500 text-3xl mb-2"><i class="bi-exclamation-triangle"></i></div>
+        <h3 class="text-base font-semibold text-slate-800 mb-2">解析失败</h3>
+        <p class="text-sm text-slate-600 mb-4">${escapeHtml(err?.message || '直链解析异常')}</p>
+        <button type="button" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-lg" onclick="document.getElementById('liveDialog').close()">关闭</button>
+      </div>
+    `);
+  });
 }
 
 /**
@@ -378,7 +517,7 @@ function initHomePage() {
       const fileName = row.dataset.name || row.querySelector('td.name-col')?.textContent?.trim() || '';
       const fileSize = row.dataset.size || row.querySelector('td.size-col')?.textContent?.trim() || '';
 
-      // Direct download button clicked
+      // Direct download button clicked (prompts warning to prevent 31362 sign error)
       if (target.closest('.action-browser')) {
         e.stopPropagation();
         const btn = target.closest('.action-browser');
@@ -387,7 +526,12 @@ function initHomePage() {
         const res = await resolveDirectLink(fid);
         btn.innerHTML = prev;
         if (res.ok) {
-          triggerBrowserDownload(res.url, res.info.out || fileName);
+          confirmBrowserDownload({
+            url: res.url,
+            outName: res.info.out || fileName,
+            info: res.info,
+            onBack: () => showDownloadOptionsModal(fid, fileName, fileSize),
+          });
         } else {
           dialog(`获取直链失败：${res.message}`);
         }
