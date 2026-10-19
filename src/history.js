@@ -281,7 +281,7 @@ export function showHistoryMoreModal(item) {
       toast('已推送到 Motrix 下载列表');
       xdialog();
     } else {
-      dialog(`推送到 Motrix 失败：${pushRes.message}`);
+      dialog(`推送到 Motrix 失败：${escapeHtml(pushRes.message)}`);
     }
   });
 
@@ -485,7 +485,7 @@ export function initHistoryPage() {
       if (pushRes.code === 0) {
         toast('已推送到 Motrix 下载列表');
       } else {
-        dialog(`推送到 Motrix 失败：${pushRes.message}`);
+        dialog(`推送到 Motrix 失败：${escapeHtml(pushRes.message)}`);
       }
       return;
     }

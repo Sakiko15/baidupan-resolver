@@ -9,8 +9,8 @@ import { test, describe } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { random, fixpath, cut, tpl, xbody, escapeHtml, escapeShellArg, buildIdmCommand } from '../src/utils.js';
-import { parseBaiduShareText, getSignCredential, resetSignCredential, showSmartErrorDialog } from '../src/main.js';
-import { buildAria2Payload } from '../src/aria2.js';
+import { parseBaiduShareText, getSignCredential, resetSignCredential, showSmartErrorDialog, resolveDirectLink, DIRECT_LINK_TTL, directLinkCache, state } from '../src/main.js';
+import { buildAria2Payload, checkConnection, normalizeRpcUrl } from '../src/aria2.js';
 import { Router } from '../src/router.js';
 import { API_BASE } from '../src/api.js';
 import {
@@ -37,12 +37,18 @@ describe('1. Utility Functions & Security Sanitization', () => {
     assert.notStrictEqual(sign, sign2, 'Random signs should be unique');
   });
 
-  test('fixpath() removes forbidden filesystem characters and double slashes', () => {
+  test('fixpath() removes forbidden filesystem characters, double slashes, and trailing spaces/periods', () => {
     const input = 'my:test*file?"name<test>|path//sub///file.mp4';
     const output = fixpath(input);
     assert.strictEqual(output, 'mytestfilename<test>path/sub/file.mp4'.replace(/<test>/g, 'test'));
     assert.doesNotMatch(output, /[:*?"<>|]/);
     assert.doesNotMatch(output, /\/{2,}/);
+
+    // Windows trailing period and space sanitization
+    assert.strictEqual(fixpath('test file . '), 'test file');
+    assert.strictEqual(fixpath('sample... '), 'sample');
+    assert.strictEqual(fixpath('normal_file.mp4'), 'normal_file.mp4');
+    assert.strictEqual(fixpath('folder/name. ..'), 'folder/name');
   });
 
   test('cut() slices between delimiters correctly and returns empty string if delimiter missing', () => {
@@ -182,6 +188,55 @@ describe('4. Aria2 / Motrix RPC Payload Generation & Secret Token Protocol', () 
     const payloadWhitespaceToken = buildAria2Payload('aria2.addUri', [urls, info], '   ');
     assert.strictEqual(payloadWhitespaceToken.params.length, 2);
     assert.deepStrictEqual(payloadWhitespaceToken.params[0], urls);
+  });
+
+  test('normalizeRpcUrl() trims whitespace, slashes, and appends /jsonrpc automatically', () => {
+    assert.strictEqual(normalizeRpcUrl('http://localhost:16800'), 'http://localhost:16800/jsonrpc');
+    assert.strictEqual(normalizeRpcUrl('http://localhost:16800/'), 'http://localhost:16800/jsonrpc');
+    assert.strictEqual(normalizeRpcUrl('http://127.0.0.1:6800/jsonrpc'), 'http://127.0.0.1:6800/jsonrpc');
+    assert.strictEqual(normalizeRpcUrl('http://127.0.0.1:6800/jsonrpc/'), 'http://127.0.0.1:6800/jsonrpc');
+    assert.strictEqual(normalizeRpcUrl('   http://localhost:16800///   '), 'http://localhost:16800/jsonrpc');
+    assert.strictEqual(normalizeRpcUrl(''), 'http://localhost:16800/jsonrpc');
+    assert.strictEqual(normalizeRpcUrl(null), 'http://localhost:16800/jsonrpc');
+  });
+
+  test('checkConnection() sends read-only aria2.getVersion and avoids modifying user configuration', async () => {
+    const originalFetch = globalThis.fetch;
+    let interceptedMethod = null;
+    let interceptedParams = null;
+
+    globalThis.fetch = async (url, options) => {
+      const body = JSON.parse(options.body);
+      interceptedMethod = body.method;
+      interceptedParams = body.params;
+      return {
+        json: async () => ({ id: body.id, result: { version: '1.36.0', enabledFeatures: ['Async DNS'] } }),
+      };
+    };
+
+    try {
+      const ok = await checkConnection({ jsonrpc: 'http://localhost:16800/jsonrpc', token: 'test_token' });
+      assert.strictEqual(ok, true);
+      assert.strictEqual(interceptedMethod, 'aria2.getVersion');
+      assert.deepStrictEqual(interceptedParams, ['token:test_token']);
+      assert.notStrictEqual(interceptedMethod, 'aria2.changeGlobalOption');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('checkConnection() returns false if response does not contain valid version or throws', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      json: async () => ({ id: '1', error: { message: 'Unauthorized' } }),
+    });
+
+    try {
+      const ok = await checkConnection({ jsonrpc: 'http://localhost:16800/jsonrpc', token: '' });
+      assert.strictEqual(ok, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 
@@ -650,5 +705,112 @@ describe('12. History Management & Parsing Persistence', () => {
     assert.ok(mainJs.includes('initHistoryPage'), 'src/main.js should import and register initHistoryPage');
     assert.ok(mainJs.includes('history: initHistoryPage'), 'src/main.js should register history page in Router');
     assert.ok(mainJs.includes('history: {'), 'src/main.js should expose history operations on box');
+  });
+});
+
+describe('13. Codebase Audit Remediation: Concurrency Isolation, Cache TTL & Dialog XSS Defense', () => {
+  test('resolveDirectLink() isolates request params and does not mutate state.si.fid', async () => {
+    const originalFetch = globalThis.fetch;
+    let interceptedBody = null;
+    state.si.fid = 'initial_global_fid';
+    state.si.surl = 'test_surl';
+    state.si.pwd = '1234';
+
+    globalThis.fetch = async (url, options) => {
+      const body = JSON.parse(options.body);
+      interceptedBody = body;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          code: 0,
+          data: {
+            url: ['https://pcs.baidu.com/file_concurrency_test'],
+            info: { out: 'concurrent_test.mp4', 'user-agent': 'netdisk' },
+          },
+        }),
+      };
+    };
+
+    try {
+      const targetFid = '999888';
+      const res = await resolveDirectLink(targetFid);
+      assert.strictEqual(res.ok, true);
+      // The sent payload must contain the target FID
+      assert.strictEqual(interceptedBody.fid, '999888');
+      // But state.si.fid must NOT be mutated to prevent concurrent race conditions
+      assert.strictEqual(state.si.fid, 'initial_global_fid', 'state.si.fid must remain untouched by resolveDirectLink');
+    } finally {
+      globalThis.fetch = originalFetch;
+      directLinkCache.clear();
+    }
+  });
+
+  test('directLinkCache enforces 2-hour DIRECT_LINK_TTL and refreshes on expiration', async () => {
+    assert.strictEqual(DIRECT_LINK_TTL, 2 * 3600 * 1000);
+
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+
+    globalThis.fetch = async () => {
+      fetchCount++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          code: 0,
+          data: {
+            url: [`https://pcs.baidu.com/file_ttl_test_${fetchCount}`],
+            info: { out: 'ttl_test.mp4', 'user-agent': 'netdisk' },
+          },
+        }),
+      };
+    };
+
+    try {
+      const fid = 'fid_ttl_check';
+      directLinkCache.clear();
+
+      // First fetch: populates cache
+      const res1 = await resolveDirectLink(fid);
+      assert.strictEqual(res1.ok, true);
+      assert.strictEqual(fetchCount, 1);
+      assert.strictEqual(res1.url, 'https://pcs.baidu.com/file_ttl_test_1');
+
+      // Second fetch within TTL: uses cache, no extra fetch
+      const res2 = await resolveDirectLink(fid);
+      assert.strictEqual(res2.ok, true);
+      assert.strictEqual(fetchCount, 1);
+      assert.strictEqual(res2.url, 'https://pcs.baidu.com/file_ttl_test_1');
+
+      // Simulate cache expiration by winding back createdAt
+      const entry = directLinkCache.get(fid);
+      assert.ok(entry && entry.createdAt, 'Cache entry must have createdAt timestamp');
+      entry.createdAt = Date.now() - DIRECT_LINK_TTL - 1000;
+
+      // Third fetch after TTL: must trigger fresh fetch
+      const res3 = await resolveDirectLink(fid);
+      assert.strictEqual(res3.ok, true);
+      assert.strictEqual(fetchCount, 2, 'Expired cache entry must trigger fresh fetch');
+      assert.strictEqual(res3.url, 'https://pcs.baidu.com/file_ttl_test_2');
+    } finally {
+      globalThis.fetch = originalFetch;
+      directLinkCache.clear();
+    }
+  });
+
+  test('Error message dialog call sites apply escapeHtml to prevent DOM XSS', () => {
+    const mainJs = fs.readFileSync(path.resolve(baseDir, '../src/main.js'), 'utf-8');
+    const historyJs = fs.readFileSync(path.resolve(baseDir, '../src/history.js'), 'utf-8');
+
+    // Verify main.js line has escapeHtml
+    assert.ok(
+      mainJs.includes('dialog(`推送到 Motrix 失败：${escapeHtml(pushRes.message)}`)'),
+      'src/main.js should escape pushRes.message in dialog'
+    );
+
+    // Verify history.js has escapeHtml at dialog call sites
+    const historyMatches = historyJs.match(/dialog\(`推送到 Motrix 失败：\$\{escapeHtml\(pushRes\.message\)\}`\)/g);
+    assert.strictEqual(historyMatches?.length, 2, 'src/history.js should escape pushRes.message at both dialog call sites');
   });
 });

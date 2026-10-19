@@ -10,6 +10,22 @@ const DEFAULT_CONFIG = {
 };
 
 /**
+ * Normalize Aria2 JSON-RPC URL: trims whitespace, removes trailing slashes,
+ * and automatically appends '/jsonrpc' if missing.
+ * @param {string} url
+ * @returns {string}
+ */
+export function normalizeRpcUrl(url) {
+  let u = (url || '').toString().trim();
+  if (!u) return DEFAULT_CONFIG.jsonrpc;
+  u = u.replace(/\/+$/, '');
+  if (!u.endsWith('/jsonrpc')) {
+    u = `${u}/jsonrpc`;
+  }
+  return u;
+}
+
+/**
  * Get current Aria2 configuration from localStorage
  */
 export function getAria2Config() {
@@ -52,18 +68,18 @@ export async function checkConnection(config = getAria2Config()) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 1000);
 
-  const payload = buildAria2Payload('aria2.changeGlobalOption', [{ 'max-concurrent-downloads': '2' }], config.token);
+  const payload = buildAria2Payload('aria2.getVersion', [], config.token);
 
   try {
     const res = await fetch(config.jsonrpc || DEFAULT_CONFIG.jsonrpc, {
       method: 'POST',
       body: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'text/plain' },
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
     const json = await res.json();
-    return json?.result === 'OK';
+    return typeof json?.result?.version === 'string' && json.result.version.length > 0;
   } catch {
     clearTimeout(timeoutId);
     return false;
@@ -157,7 +173,7 @@ export function showConfigDialog(onSave) {
   formEl.addEventListener('submit', e => {
     e.preventDefault();
     const fd = new FormData(formEl);
-    const jsonrpc = (fd.get('jsonrpc') || '').toString().trim() || DEFAULT_CONFIG.jsonrpc;
+    const jsonrpc = normalizeRpcUrl(fd.get('jsonrpc'));
     const token = (fd.get('token') || '').toString().trim();
     const updated = { jsonrpc, token };
     saveAria2Config(updated);

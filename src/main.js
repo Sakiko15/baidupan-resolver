@@ -53,7 +53,8 @@ export const state = {
 };
 
 // Direct link session cache (avoids repeated API calls for the same file in a session)
-const directLinkCache = new Map();
+export const DIRECT_LINK_TTL = 3600 * 1000 * 2; // 2 hours in ms
+export const directLinkCache = new Map();
 
 // Global box instance for debugging / console inspection
 const box = {
@@ -276,17 +277,25 @@ export function updateHistoryBadge() {
  * Fetch or get cached direct download link
  */
 export async function resolveDirectLink(fid) {
-  if (directLinkCache.has(fid)) {
-    return { ok: true, ...directLinkCache.get(fid) };
+  const cached = directLinkCache.get(fid);
+  if (cached && Date.now() - (cached.createdAt || 0) < DIRECT_LINK_TTL) {
+    return { ok: true, ...cached };
   }
 
   const sign = load('sign', null) || random();
   save('sign', sign);
+  const site = typeof location !== 'undefined' ? location.hostname : '';
   state.si.sign = sign;
-  state.si.site = location.hostname;
-  state.si.fid = fid;
+  state.si.site = site;
 
-  const res = await fetchDirectLink(state.si);
+  const params = {
+    ...state.si,
+    fid: String(fid),
+    site,
+    sign,
+  };
+
+  const res = await fetchDirectLink(params);
   if (res.code !== 0 || !res.data?.url?.[0]) {
     return { ok: false, message: res.message || '直链获取失败' };
   }
@@ -297,6 +306,7 @@ export async function resolveDirectLink(fid) {
     url: urls[0],
     urls,
     info,
+    createdAt: Date.now(),
   };
   directLinkCache.set(fid, result);
 
@@ -759,7 +769,7 @@ function initHomePage() {
         if (pushRes.code === 0) {
           toast('已推送到 Motrix 下载列表');
         } else {
-          dialog(`推送到 Motrix 失败：${pushRes.message}`);
+          dialog(`推送到 Motrix 失败：${escapeHtml(pushRes.message)}`);
         }
         return;
       }

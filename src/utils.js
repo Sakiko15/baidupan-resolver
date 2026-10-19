@@ -31,7 +31,7 @@ export function random(len = 16) {
 }
 
 export function fixpath(str = '') {
-  return str.replaceAll(/[:*?"<>|]/g, '').replaceAll(/\/{2,}/g, '/');
+  return str.replaceAll(/[:*?"<>|]/g, '').replaceAll(/\/{2,}/g, '/').replace(/[\s.]+$/, '');
 }
 
 export function cut(str, start, end) {
@@ -124,7 +124,8 @@ export function dialog(content) {
     dlg.replaceChildren(content);
   } else {
     const raw = (content ?? '').toString();
-    dlg.innerHTML = raw.includes('<') ? raw : raw.replaceAll('\n', '<br>');
+    const sanitized = raw.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '').replace(/<script[^>]*>/gi, '');
+    dlg.innerHTML = sanitized.includes('<') ? sanitized : sanitized.replaceAll('\n', '<br>');
   }
 
   if (!dlg.open) {
