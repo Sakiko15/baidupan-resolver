@@ -13,6 +13,16 @@ import { parseBaiduShareText, getSignCredential, resetSignCredential, showSmartE
 import { buildAria2Payload } from '../src/aria2.js';
 import { Router } from '../src/router.js';
 import { API_BASE } from '../src/api.js';
+import {
+  getHistoryList,
+  addHistoryItem,
+  removeHistoryItem,
+  clearHistory,
+  formatHistoryTime,
+  filterHistory,
+  STORAGE_KEY,
+  MAX_HISTORY,
+} from '../src/history.js';
 
 const baseDir = import.meta.dirname || process.cwd();
 
@@ -449,5 +459,196 @@ describe('11. Baidu Quota Limit Analysis, Sign Credential Management & Multi-Acc
     assert.ok(readme.includes('核心瓶颈在 `uid` 而非 `IP`'));
     assert.ok(readme.includes('多账号轮换法 (Multi-Account Rotation)'));
     assert.ok(readme.includes('自建直链解析后端 (Self-Hosted Resolver)'));
+  });
+});
+
+describe('12. History Management & Parsing Persistence', () => {
+  function withMockStorage(fn) {
+    const storage = new Map();
+    const orig = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem: k => storage.get(k) ?? null,
+      setItem: (k, v) => storage.set(k, String(v)),
+      removeItem: k => storage.delete(k),
+      clear: () => storage.clear(),
+      _storage: storage,
+    };
+    try {
+      fn(storage);
+    } finally {
+      if (orig !== undefined) {
+        globalThis.localStorage = orig;
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
+  }
+
+  test('addHistoryItem() writes record idempotently, validates required fields, and updates existing item to top', () => {
+    withMockStorage(() => {
+      // Missing name or url returns current list without adding
+      const emptyRes = addHistoryItem({ fid: '123' });
+      assert.strictEqual(emptyRes.length, 0);
+
+      // Add first item
+      const list1 = addHistoryItem({
+        fid: 'fid_101',
+        name: 'test_file_1.zip',
+        size: '128.5',
+        url: 'https://pcs.baidu.com/file1?sign=abc',
+        ua: 'netdisk',
+        surl: 'share101',
+        pwd: 'abcd',
+      });
+      assert.strictEqual(list1.length, 1);
+      assert.strictEqual(list1[0].fid, 'fid_101');
+      assert.strictEqual(list1[0].name, 'test_file_1.zip');
+      assert.strictEqual(list1[0].size, '128.5');
+      assert.strictEqual(list1[0].url, 'https://pcs.baidu.com/file1?sign=abc');
+      assert.strictEqual(list1[0].ua, 'netdisk');
+      assert.strictEqual(list1[0].surl, 'share101');
+      assert.strictEqual(list1[0].pwd, 'abcd');
+      assert.strictEqual(typeof list1[0].id, 'string');
+      assert.strictEqual(typeof list1[0].time, 'number');
+
+      // Add second item
+      const list2 = addHistoryItem({
+        fid: 'fid_102',
+        name: 'test_file_2.mp4',
+        size: '500.0',
+        url: 'https://pcs.baidu.com/file2?sign=def',
+        ua: 'netdisk',
+        surl: 'share102',
+        pwd: '1234',
+      });
+      assert.strictEqual(list2.length, 2);
+      assert.strictEqual(list2[0].fid, 'fid_102');
+      assert.strictEqual(list2[1].fid, 'fid_101');
+
+      // Re-add first item with updated url (idempotent update & move to front)
+      const list3 = addHistoryItem({
+        fid: 'fid_101',
+        name: 'test_file_1.zip',
+        size: '128.5',
+        url: 'https://pcs.baidu.com/file1?sign=refreshed_sign',
+        ua: 'netdisk',
+        surl: 'share101',
+        pwd: 'abcd',
+      });
+      assert.strictEqual(list3.length, 2, 'Should not duplicate existing file record');
+      assert.strictEqual(list3[0].fid, 'fid_101', 'Updated record should move to front');
+      assert.strictEqual(list3[0].url, 'https://pcs.baidu.com/file1?sign=refreshed_sign');
+      assert.strictEqual(list3[1].fid, 'fid_102');
+    });
+  });
+
+  test('addHistoryItem() truncates exceeding records to MAX_HISTORY (100) via FIFO', () => {
+    withMockStorage(() => {
+      assert.strictEqual(MAX_HISTORY, 100);
+      for (let i = 1; i <= 105; i++) {
+        addHistoryItem({
+          fid: `fid_${i}`,
+          name: `file_${i}.dat`,
+          size: '1.0',
+          url: `https://pcs.baidu.com/file_${i}`,
+          surl: `share_${i}`,
+        });
+      }
+      const list = getHistoryList();
+      assert.strictEqual(list.length, 100, 'History list must be capped at MAX_HISTORY=100');
+      // Most recent should be at index 0 (fid_105), oldest kept should be fid_6 (fid_1 to fid_5 pruned)
+      assert.strictEqual(list[0].fid, 'fid_105');
+      assert.strictEqual(list[99].fid, 'fid_6');
+      assert.strictEqual(list.some(x => x.fid === 'fid_1'), false, 'Oldest item fid_1 should have been pruned');
+    });
+  });
+
+  test('getHistoryList() gracefully handles corrupted JSON and non-array storage values', () => {
+    withMockStorage(storage => {
+      // Empty storage returns empty array
+      assert.deepStrictEqual(getHistoryList(), []);
+
+      // Corrupted JSON returns empty array
+      storage.set(STORAGE_KEY, '{invalid json');
+      assert.deepStrictEqual(getHistoryList(), []);
+
+      // Non-array JSON (e.g. object or number) returns empty array
+      storage.set(STORAGE_KEY, JSON.stringify({ name: 'not an array' }));
+      assert.deepStrictEqual(getHistoryList(), []);
+    });
+  });
+
+  test('removeHistoryItem() removes single record by id and clearHistory() empties all records', () => {
+    withMockStorage(() => {
+      addHistoryItem({ fid: '1', name: 'f1.txt', url: 'https://pcs/1' });
+      addHistoryItem({ fid: '2', name: 'f2.txt', url: 'https://pcs/2' });
+      addHistoryItem({ fid: '3', name: 'f3.txt', url: 'https://pcs/3' });
+
+      const list = getHistoryList();
+      assert.strictEqual(list.length, 3);
+      const targetId = list[1].id;
+
+      const afterRemove = removeHistoryItem(targetId);
+      assert.strictEqual(afterRemove.length, 2);
+      assert.strictEqual(afterRemove.some(x => x.id === targetId), false);
+      assert.strictEqual(getHistoryList().length, 2);
+
+      const afterClear = clearHistory();
+      assert.deepStrictEqual(afterClear, []);
+      assert.deepStrictEqual(getHistoryList(), []);
+    });
+  });
+
+  test('formatHistoryTime() and filterHistory() format and search correctly', () => {
+    const formatted = formatHistoryTime(1700000000000);
+    assert.match(formatted, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    assert.strictEqual(formatHistoryTime(null), '');
+    assert.strictEqual(formatHistoryTime('invalid-date'), '');
+
+    const sample = [
+      { id: '1', name: 'Document.pdf', surl: 'doc123' },
+      { id: '2', name: 'Tutorial_Video.mp4', surl: 'video456' },
+      { id: '3', name: 'archive.tar.gz', surl: 'arch789' },
+    ];
+    // Filter by name
+    assert.strictEqual(filterHistory('doc', sample).length, 1);
+    assert.strictEqual(filterHistory('video', sample).length, 1);
+    // Filter by surl
+    assert.strictEqual(filterHistory('arch789', sample).length, 1);
+    // Case-insensitive
+    assert.strictEqual(filterHistory('TUTORIAL', sample).length, 1);
+    // Empty keyword returns all
+    assert.strictEqual(filterHistory('', sample).length, 3);
+  });
+
+  test('vite.config.js includes history.html entry configuration', () => {
+    const viteConfig = fs.readFileSync(path.resolve(baseDir, '../vite.config.js'), 'utf-8');
+    assert.ok(viteConfig.includes('history:'), 'vite.config.js should define history entry');
+    assert.ok(viteConfig.includes('history.html'), 'vite.config.js should point to history.html');
+  });
+
+  test('home.html and history.html contain required navigation, templates, and buttons', () => {
+    const homeHtml = fs.readFileSync(path.resolve(baseDir, '../home.html'), 'utf-8');
+    assert.ok(homeHtml.includes('id="btnNavHistory"'), 'home.html should contain #btnNavHistory');
+    assert.ok(homeHtml.includes('id="historyCountBadge"'), 'home.html should contain #historyCountBadge');
+    assert.ok(homeHtml.includes('href="history.html"'), 'home.html should link to history.html');
+
+    const historyHtml = fs.readFileSync(path.resolve(baseDir, '../history.html'), 'utf-8');
+    assert.ok(historyHtml.includes('id="btnBackHome"'), 'history.html should contain #btnBackHome');
+    assert.ok(historyHtml.includes('id="historyTotalCount"'), 'history.html should contain #historyTotalCount');
+    assert.ok(historyHtml.includes('id="btnClearAllHistory"'), 'history.html should contain #btnClearAllHistory');
+    assert.ok(historyHtml.includes('id="historySearchInput"'), 'history.html should contain #historySearchInput');
+    assert.ok(historyHtml.includes('id="historyTableContainer"'), 'history.html should contain #historyTableContainer');
+    assert.ok(historyHtml.includes('id="historyTableBody"'), 'history.html should contain #historyTableBody');
+    assert.ok(historyHtml.includes('id="historyEmptyState"'), 'history.html should contain #historyEmptyState');
+  });
+
+  test('src/main.js integrates history persistence in resolveDirectLink and registers history page in Router', () => {
+    const mainJs = fs.readFileSync(path.resolve(baseDir, '../src/main.js'), 'utf-8');
+    assert.ok(mainJs.includes('addHistoryItem'), 'src/main.js should import and call addHistoryItem');
+    assert.ok(mainJs.includes('updateHistoryBadge'), 'src/main.js should define updateHistoryBadge');
+    assert.ok(mainJs.includes('initHistoryPage'), 'src/main.js should import and register initHistoryPage');
+    assert.ok(mainJs.includes('history: initHistoryPage'), 'src/main.js should register history page in Router');
+    assert.ok(mainJs.includes('history: {'), 'src/main.js should expose history operations on box');
   });
 });

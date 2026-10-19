@@ -17,9 +17,15 @@
         <i class="bi-info-circle text-blue-500"></i>
         <span>使用须知与规范：</span>
       </div>
-      <button type="button" id="btnResetSign" class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-1.5 py-0.5 rounded hover:bg-blue-50 transition cursor-pointer" title="点击重置客户端 Sign 凭证并解除旧 UID 绑定，方便切换百度网盘小号继续解析">
-        <i class="bi-arrow-repeat"></i><span>重置解析凭证</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <a href="history.html" id="btnNavHistory" class="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 hover:underline px-1.5 py-0.5 rounded hover:bg-slate-100 transition cursor-pointer" title="查看已解析的历史文件直链">
+          <i class="bi-clock-history text-slate-500"></i><span>解析历史</span>
+          <span id="historyCountBadge" class="hidden text-[10px] font-mono px-1 py-0.5 bg-blue-100 text-blue-700 rounded-full">0</span>
+        </a>
+        <button type="button" id="btnResetSign" class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-1.5 py-0.5 rounded hover:bg-blue-50 transition cursor-pointer" title="点击重置客户端 Sign 凭证并解除旧 UID 绑定，方便切换百度网盘小号继续解析">
+          <i class="bi-arrow-repeat"></i><span>重置解析凭证</span>
+        </button>
+      </div>
     </div>
     <ul class="list-disc list-inside space-y-0.5 text-slate-500 pl-1">
       <li>必须先将资源<b>转存到自己的网盘</b>再创建分享；仅解析根目录文件，子目录会被自动忽略。</li>

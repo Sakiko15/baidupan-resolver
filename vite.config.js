@@ -22,6 +22,7 @@ export default defineConfig({
       input: {
         main: resolve(rootDir, 'index.html'),
         home: resolve(rootDir, 'home.html'),
+        history: resolve(rootDir, 'history.html'),
       },
     },
   },

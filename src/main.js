@@ -29,9 +29,16 @@ import {
   showConfigDialog,
 } from './aria2.js';
 import { Router } from './router.js';
+import {
+  getHistoryList,
+  addHistoryItem,
+  clearHistory,
+  removeHistoryItem,
+  initHistoryPage,
+} from './history.js';
 
 // Application State
-const state = {
+export const state = {
   si: {
     surl: '',
     pwd: '',
@@ -42,6 +49,7 @@ const state = {
   },
   files: [],
   wait: false,
+  autoOpen: false,
 };
 
 // Direct link session cache (avoids repeated API calls for the same file in a session)
@@ -55,6 +63,12 @@ const box = {
   directLinkCache,
   getSign: () => getSignCredential(),
   resetSign: () => resetSignCredential(),
+  history: {
+    get: getHistoryList,
+    clear: clearHistory,
+    remove: removeHistoryItem,
+  },
+  state,
 };
 globalThis.box = box;
 
@@ -243,9 +257,25 @@ export function parseBaiduShareText(text = '') {
 }
 
 /**
+ * Update history count badge on navigation link
+ */
+export function updateHistoryBadge() {
+  if (typeof document === 'undefined') return;
+  const badge = document.getElementById('historyCountBadge');
+  if (!badge) return;
+  const count = getHistoryList().length;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+/**
  * Fetch or get cached direct download link
  */
-async function resolveDirectLink(fid) {
+export async function resolveDirectLink(fid) {
   if (directLinkCache.has(fid)) {
     return { ok: true, ...directLinkCache.get(fid) };
   }
@@ -269,6 +299,24 @@ async function resolveDirectLink(fid) {
     info,
   };
   directLinkCache.set(fid, result);
+
+  // Auto persist to history
+  try {
+    const fileMeta = (state.files || box.data.files || []).find(f => String(f.fid) === String(fid));
+    addHistoryItem({
+      fid,
+      name: info.out || fileMeta?.name || '未知文件',
+      size: fileMeta?.size || '',
+      url: urls[0],
+      ua: info['user-agent'] || 'netdisk',
+      surl: state.si.surl || '',
+      pwd: state.si.pwd || '',
+    });
+    updateHistoryBadge();
+  } catch (err) {
+    console.warn('Failed to save to history:', err);
+  }
+
   return { ok: true, ...result };
 }
 /**
@@ -537,9 +585,24 @@ function initHomePage() {
 
   if (!urlInput || !openBtn) return;
 
-  // Clear unrendered template placeholder row from home.html
-  reactiveData.files = [];
+  // Update history count badge on navigation link
+  updateHistoryBadge();
 
+  // Restore form values and parsed files when navigating back from history page
+  if (state.si.surl && urlInput) {
+    urlInput.value = `https://pan.baidu.com/s/1${state.si.surl}`;
+  }
+  if (state.si.pwd && pwdInput) {
+    pwdInput.value = state.si.pwd;
+  }
+  const isAutoOpen = Boolean(state.autoOpen || box.autoOpen);
+  if (!isAutoOpen && Array.isArray(state.files) && state.files.length > 0) {
+    reactiveData.files = state.files;
+  } else {
+    state.files = [];
+    // Clear unrendered template placeholder row from home.html
+    reactiveData.files = [];
+  }
   // Reset Sign button handler
   const resetSignBtn = document.getElementById('btnResetSign');
   if (resetSignBtn) {
@@ -628,6 +691,7 @@ function initHomePage() {
         dialog('该分享链接中没有检测到可解析的根目录文件。\n提示：子目录中的文件会被直接忽略，请将文件直接放在分享根目录。');
       }
 
+      state.files = list;
       reactiveData.files = list;
     } finally {
       openBtn.innerHTML = originalBtnHtml;
@@ -704,14 +768,28 @@ function initHomePage() {
       showDownloadOptionsModal(fid, fileName, fileSize);
     });
   }
+
+  // Check if requested to auto open from history re-parsing
+  if (state.autoOpen || box.autoOpen) {
+    state.autoOpen = false;
+    box.autoOpen = false;
+    setTimeout(() => {
+      openBtn.click();
+    }, 50);
+  }
 }
 
 // Router initialization
+export let router = null;
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  new Router({
+  router = new Router({
     basePath: document.body?.dataset?.site || '',
     pages: {
       home: initHomePage,
+      history: initHistoryPage,
     },
   });
+  box.router = router;
 }
+
+export { initHomePage, initHistoryPage };
