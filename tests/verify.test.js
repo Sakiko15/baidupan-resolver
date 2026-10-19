@@ -208,17 +208,28 @@ describe('7. Nginx Configuration Rules Verification', () => {
   const confPath = path.resolve(baseDir, '../nginx/default.conf');
   const conf = fs.readFileSync(confPath, 'utf-8');
 
-  test('Contains upstream reverse proxy with HTTP 1.1 keep-alive for /api/ to mxd.indevs.in', () => {
+  test('Contains upstream reverse proxy with HTTP 1.1 keep-alive and IP forwarding for /api/ to mxd.indevs.in', () => {
     assert.ok(conf.includes('location /api/'));
     assert.ok(conf.includes('proxy_pass http://mxd.indevs.in/api/;'));
     assert.ok(conf.includes('proxy_http_version 1.1;'));
     assert.ok(conf.includes('proxy_set_header Connection "";'));
     assert.ok(conf.includes('proxy_set_header Host mxd.indevs.in;'));
+    assert.ok(conf.includes('proxy_set_header X-Real-IP $remote_addr;'));
   });
 
-  test('Contains essential security headers (X-Content-Type-Options, X-Frame-Options)', () => {
+  test('Contains essential security headers globally and in scoped locations to avoid inheritance suppression', () => {
     assert.ok(conf.includes('add_header X-Content-Type-Options "nosniff" always;'));
     assert.ok(conf.includes('add_header X-Frame-Options "SAMEORIGIN" always;'));
+
+    // Verify location ~* \.html$ has explicit security headers
+    const htmlLocation = conf.match(/location\s+~\*\s+\\\.html\$\s*\{([^}]+)\}/)?.[1] || '';
+    assert.ok(htmlLocation.includes('add_header X-Content-Type-Options "nosniff" always;'));
+    assert.ok(htmlLocation.includes('add_header X-Frame-Options "SAMEORIGIN" always;'));
+
+    // Verify location /assets/ has explicit security headers
+    const assetsLocation = conf.match(/location\s+\/assets\/\s*\{([^}]+)\}/)?.[1] || '';
+    assert.ok(assetsLocation.includes('add_header X-Content-Type-Options "nosniff" always;'));
+    assert.ok(assetsLocation.includes('add_header X-Frame-Options "SAMEORIGIN" always;'));
   });
 
   test('Configures Gzip compression', () => {
@@ -243,7 +254,8 @@ describe('8. Docker & Infrastructure Configuration Verification', () => {
   const dockerfilePath = path.resolve(baseDir, '../Dockerfile');
   const dockerfile = fs.readFileSync(dockerfilePath, 'utf-8');
 
-  test('Dockerfile has multi-stage build (node builder -> nginx runner)', () => {
+  test('Dockerfile has multi-stage build with --platform=$BUILDPLATFORM optimization (node builder -> nginx runner)', () => {
+    assert.ok(dockerfile.includes('FROM --platform=$BUILDPLATFORM node:20-alpine AS builder'));
     assert.ok(dockerfile.includes('AS builder'));
     assert.ok(dockerfile.includes('FROM nginx:alpine'));
     assert.ok(dockerfile.includes('COPY --from=builder /app/dist /usr/share/nginx/html'));
@@ -269,5 +281,27 @@ describe('8. Docker & Infrastructure Configuration Verification', () => {
 
   test('.dockerignore does not contain internal tool protocol local://*', () => {
     assert.doesNotMatch(dockerignore, /local:\/\//);
+  });
+});
+
+describe('9. Build & Project Configuration Verification', () => {
+  const viteConfigPath = path.resolve(baseDir, '../vite.config.js');
+  const viteConfig = fs.readFileSync(viteConfigPath, 'utf-8');
+
+  test('vite.config.js uses fileURLToPath for robust cross-platform path resolution', () => {
+    assert.ok(viteConfig.includes("import { fileURLToPath } from 'node:url';"));
+    assert.ok(viteConfig.includes("fileURLToPath(new URL('.', import.meta.url))"));
+  });
+
+  const readmePath = path.resolve(baseDir, '../README.md');
+  const readme = fs.readFileSync(readmePath, 'utf-8');
+
+  test('README.md deployment methods have unique sequential numbering (A, B, C, D)', () => {
+    assert.ok(readme.includes('### 方式 A：1Panel 容器编排一键部署'));
+    assert.ok(readme.includes('### 方式 B：本地 Docker Compose 部署'));
+    assert.ok(readme.includes('### 方式 C：单独构建 Docker 镜像'));
+    assert.ok(readme.includes('### 方式 D：传统 Nginx 宿主机部署'));
+    const matches = readme.match(/### 方式 B：/g);
+    assert.strictEqual(matches?.length, 1, 'Should not have duplicate "方式 B"');
   });
 });

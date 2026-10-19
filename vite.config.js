@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
+import { fileURLToPath } from 'node:url';
+
+const rootDir = import.meta.dirname || fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   plugins: [tailwindcss()],
@@ -17,8 +20,8 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       input: {
-        main: resolve(import.meta.dirname || process.cwd(), 'index.html'),
-        home: resolve(import.meta.dirname || process.cwd(), 'home.html'),
+        main: resolve(rootDir, 'index.html'),
+        home: resolve(rootDir, 'home.html'),
       },
     },
   },

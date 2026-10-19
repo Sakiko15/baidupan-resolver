@@ -95,14 +95,14 @@ docker compose logs -f
 
 部署完成后，在浏览器中访问 `http://<服务器IP>:8080` 即可使用。
 
-### 方式 B：单独构建 Docker 镜像
+### 方式 C：单独构建 Docker 镜像
 
 ```bash
 docker build -t baidupan-resolver:latest .
 docker run -d --name baidupan-web -p 8080:80 --restart unless-stopped baidupan-resolver:latest
 ```
 
-### 方式 C：传统 Nginx 宿主机部署
+### 方式 D：传统 Nginx 宿主机部署
 
 若直接使用宿主机现有的 Nginx：
 1. 本地或 CI 执行 `npm run build`，将生成的 `dist/` 目录内容上传至服务器 `/usr/share/nginx/html`；

@@ -61,7 +61,7 @@ const reactiveData = new Proxy(box.data, {
     if (typeof document !== 'undefined') {
       document.querySelectorAll(`[data-json="${prop}"]`).forEach(el => {
         el.dataset.html ??= el.innerHTML;
-        el.innerHTML = tpl(el.dataset.html, value);
+        el.innerHTML = Array.isArray(value) && value.length === 0 ? '' : tpl(el.dataset.html, value);
       });
     }
     return Reflect.set(target, prop, value, receiver);
