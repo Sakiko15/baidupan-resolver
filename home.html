@@ -12,15 +12,20 @@
 
   <!-- Notice & Tips -->
   <div class="w-full bg-slate-50/90 border border-slate-200/80 rounded-xl p-3.5 text-xs text-slate-600 space-y-1 shadow-xs">
-    <div class="flex items-center gap-1.5 font-medium text-slate-700">
-      <i class="bi-info-circle text-blue-500"></i>
-      <span>使用须知与规范：</span>
+    <div class="flex items-center justify-between gap-1.5 font-medium text-slate-700">
+      <div class="flex items-center gap-1.5">
+        <i class="bi-info-circle text-blue-500"></i>
+        <span>使用须知与规范：</span>
+      </div>
+      <button type="button" id="btnResetSign" class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline px-1.5 py-0.5 rounded hover:bg-blue-50 transition cursor-pointer" title="点击重置客户端 Sign 凭证并解除旧 UID 绑定，方便切换百度网盘小号继续解析">
+        <i class="bi-arrow-repeat"></i><span>重置解析凭证</span>
+      </button>
     </div>
     <ul class="list-disc list-inside space-y-0.5 text-slate-500 pl-1">
       <li>必须先将资源<b>转存到自己的网盘</b>再创建分享；仅解析根目录文件，子目录会被自动忽略。</li>
       <li>百度网盘直链强制校验 <code>User-Agent: netdisk</code>，推荐优先使用 <b>Motrix / Aria2</b> 一键推送下载；普通浏览器直接下载需安装 UA 切换插件，否则将报错 <b>sign error (31362)</b>。</li>
-      <li>服务端当前每小时配额约为 <b>5 个文件</b>，解析凭证每小时自动刷新解绑。</li>
-      <li>在「打开」按钮上<b>点击鼠标右键</b>可随时配置本地/远程 Motrix 或 Aria2 RPC 连接。</li>
+      <li>服务端限制单个网盘账号每小时约 <b>5 个文件</b>（基于网盘 UID 限制，使用代理 IP 无法绕过）；如需继续下载请转存至<b>小号</b>并点击右上角「<span class="text-blue-600 font-medium">重置解析凭证</span>」。</li>
+      <li>在「打开」按钮上<b>点击鼠标右键</b>可随时配置本地/远程 Motrix 或 Aria2 RPC 连接，也可在其中管理解析凭证。</li>
     </ul>
   </div>
 

@@ -9,7 +9,7 @@ import { test, describe } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { random, fixpath, cut, tpl, xbody, escapeHtml, escapeShellArg, buildIdmCommand } from '../src/utils.js';
-import { parseBaiduShareText } from '../src/main.js';
+import { parseBaiduShareText, getSignCredential, resetSignCredential, showSmartErrorDialog } from '../src/main.js';
 import { buildAria2Payload } from '../src/aria2.js';
 import { Router } from '../src/router.js';
 import { API_BASE } from '../src/api.js';
@@ -363,5 +363,91 @@ describe('10. Baidu 31362 Sign Error Remediation, Direct Download Protection & U
     assert.ok(readDoc.includes('31362'));
     assert.ok(readDoc.includes('sign error'));
     assert.ok(readDoc.includes('User-Agent'));
+  });
+});
+
+describe('11. Baidu Quota Limit Analysis, Sign Credential Management & Multi-Account Rotation', () => {
+  test('resetSignCredential() generates 32-hex sign, updates global state, and clears uid/sid/cache', () => {
+    // Mock localStorage
+    const storage = new Map();
+    const origLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem: (k) => storage.get(k) ?? null,
+      setItem: (k, v) => storage.set(k, String(v)),
+      removeItem: (k) => storage.delete(k),
+      clear: () => storage.clear(),
+    };
+
+    try {
+      // Populate state with existing session data and cache
+      globalThis.box.si.uid = 'mock_uid_12345';
+      globalThis.box.si.sid = 'mock_sid_67890';
+      globalThis.box.directLinkCache.set('mock_fid_1', { url: 'https://pcs.baidu.com/file' });
+
+      const initialSign = resetSignCredential();
+      assert.strictEqual(typeof initialSign, 'string');
+      assert.strictEqual(initialSign.length, 32);
+      assert.match(initialSign, /^[0-9a-f]{32}$/);
+      assert.strictEqual(globalThis.box.si.sign, initialSign);
+      assert.strictEqual(globalThis.box.si.uid, '', 'Session uid must be cleared on reset');
+      assert.strictEqual(globalThis.box.si.sid, '', 'Session sid must be cleared on reset');
+      assert.strictEqual(globalThis.box.directLinkCache.size, 0, 'Link cache must be cleared on reset');
+
+      // Check getSignCredential()
+      assert.strictEqual(getSignCredential(), initialSign);
+
+      // Second reset produces a distinct new sign
+      const secondSign = resetSignCredential();
+      assert.notStrictEqual(initialSign, secondSign);
+      assert.strictEqual(globalThis.box.si.sign, secondSign);
+      assert.strictEqual(getSignCredential(), secondSign);
+    } finally {
+      if (origLocalStorage !== undefined) {
+        globalThis.localStorage = origLocalStorage;
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
+  });
+
+  test('home.html contains #btnResetSign button and displays UID restriction and alt-account guidance', () => {
+    const homeHtml = fs.readFileSync(path.resolve(baseDir, '../home.html'), 'utf-8');
+    assert.ok(homeHtml.includes('id="btnResetSign"'), 'home.html should contain #btnResetSign button');
+    assert.ok(homeHtml.includes('重置解析凭证'), 'home.html should have reset sign text');
+    assert.ok(homeHtml.includes('网盘 UID 限制'), 'home.html should explain UID limitation');
+    assert.ok(homeHtml.includes('代理 IP 无法绕过'), 'home.html should explicitly mention proxy IP inability to bypass');
+  });
+
+  test('src/aria2.js includes #btnConfigResetSign, #configSignPreview, and properly scoped cancel button', () => {
+    const aria2Js = fs.readFileSync(path.resolve(baseDir, '../src/aria2.js'), 'utf-8');
+    assert.ok(aria2Js.includes('btnConfigResetSign'), 'src/aria2.js should include reset button in config modal');
+    assert.ok(aria2Js.includes('configSignPreview'), 'src/aria2.js should include sign preview');
+    assert.ok(aria2Js.includes(".group button[type=button]"), 'Cancel button in .group should be specifically targeted');
+  });
+  test('src/main.js implements showSmartErrorDialog for quota limit and binding conflict handling', () => {
+    assert.strictEqual(typeof showSmartErrorDialog, 'function');
+    const mainJs = fs.readFileSync(path.resolve(baseDir, '../src/main.js'), 'utf-8');
+    assert.ok(mainJs.includes('showSmartErrorDialog'), 'src/main.js should define showSmartErrorDialog');
+    assert.ok(mainJs.includes('解析凭证与网盘账号绑定冲突'), 'src/main.js should detect binding conflict');
+    assert.ok(mainJs.includes('每小时解析配额已达上限'), 'src/main.js should detect quota limit');
+    assert.ok(mainJs.includes('多账号轮换法'), 'src/main.js should recommend multi-account rotation in modal');
+  });
+
+  test('read.md documents 4.2 section with quota mechanism, SOCKS5 proxy inefficacy, and multi-account rotation', () => {
+    const readDoc = fs.readFileSync(path.resolve(baseDir, '../read.md'), 'utf-8');
+    assert.ok(readDoc.includes('4.2 每小时 5 个文件配额与凭证绑定限制说明'));
+    assert.ok(readDoc.includes('核心统计维度为网盘 `uid`'));
+    assert.ok(readDoc.includes('为什么增加 SOCKS5 / 代理 IP 无法绕过'));
+    assert.ok(readDoc.includes('多账号轮换法'));
+    assert.ok(readDoc.includes('自建直链解析后端'));
+  });
+
+  test('README.md FAQ details SOCKS5 inefficacy, multi-account rotation guide, and self-hosted backend architecture', () => {
+    const readme = fs.readFileSync(path.resolve(baseDir, '../README.md'), 'utf-8');
+    assert.ok(readme.includes('服务端每小时约 5 个文件配额限制能通过 SOCKS5 / HTTP 代理绕过吗'));
+    assert.ok(readme.includes('为什么配置 SOCKS5 / 代理 IP 池无法绕过限制'));
+    assert.ok(readme.includes('核心瓶颈在 `uid` 而非 `IP`'));
+    assert.ok(readme.includes('多账号轮换法 (Multi-Account Rotation)'));
+    assert.ok(readme.includes('自建直链解析后端 (Self-Hosted Resolver)'));
   });
 });

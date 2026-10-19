@@ -2,7 +2,7 @@
  * Aria2 / Motrix JSON-RPC Client Integration
  */
 
-import { uid, fixpath, load, save, dialog, xdialog, form, xbody } from './utils.js';
+import { uid, fixpath, load, save, random, toast, dialog, xdialog, form, xbody } from './utils.js';
 
 const DEFAULT_CONFIG = {
   token: '',
@@ -138,6 +138,16 @@ export function showConfigDialog(onSave) {
       </svg>
       <input name="token" type="text" autocomplete="off" placeholder="无密码则保持为空">
     </label>
+    <div class="pt-3 mt-1 border-t border-stone-200 flex items-center justify-between text-xs text-stone-500">
+      <div class="flex items-center gap-1.5">
+        <i class="bi-key text-stone-400"></i>
+        <span>解析凭证 (Sign):</span>
+        <code class="font-mono text-[11px] bg-stone-100 px-1.5 py-0.5 rounded text-stone-700" id="configSignPreview"></code>
+      </div>
+      <button type="button" id="btnConfigResetSign" class="text-blue-600 hover:text-blue-700 hover:underline cursor-pointer flex items-center gap-1">
+        <i class="bi-arrow-repeat"></i> 重置凭证
+      </button>
+    </div>
     <div class="group mt-4">
       <button type="button"><i class="bi-x-square"></i> 取消</button>
       <button type="submit"><i class="bi-check2-square"></i> 保存配置</button>
@@ -155,7 +165,34 @@ export function showConfigDialog(onSave) {
     if (typeof onSave === 'function') onSave(updated);
   });
 
-  formEl.querySelector('button[type=button]').addEventListener('click', xdialog);
+  formEl.querySelector('.group button[type=button]').addEventListener('click', xdialog);
+
+  // Display current sign and wire reset button
+  const updateSignPreview = (signVal) => {
+    const preview = formEl.querySelector('#configSignPreview');
+    if (preview) {
+      const val = signVal || load('sign', '') || '尚未生成';
+      preview.textContent = val.length >= 12 ? `${val.slice(0, 8)}...${val.slice(-4)}` : val;
+      preview.title = val;
+    }
+  };
+  updateSignPreview();
+
+  const resetBtn = formEl.querySelector('#btnConfigResetSign');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      let newSign = '';
+      if (globalThis.box?.resetSign) {
+        newSign = globalThis.box.resetSign();
+      } else {
+        newSign = random(16);
+        save('sign', newSign);
+      }
+      updateSignPreview(newSign);
+      toast(`已重置解析凭证 (Sign: ${newSign.slice(0, 8)}...)`);
+    });
+  }
+
   dialog(formEl);
   form('#liveDialog', currentConfig);
 }

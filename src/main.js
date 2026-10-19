@@ -53,8 +53,142 @@ const box = {
   data: {},
   aria2: getAria2Config(),
   directLinkCache,
+  getSign: () => getSignCredential(),
+  resetSign: () => resetSignCredential(),
 };
 globalThis.box = box;
+
+/**
+ * Get current sign credential
+ */
+export function getSignCredential() {
+  return load('sign', '') || '';
+}
+
+/**
+ * Reset sign credential:
+ * 1. Generates a new 32-hex character sign
+ * 2. Persists to localStorage.sign
+ * 3. Updates state.si.sign and clears bound session uid/sid
+ * 4. Clears directLinkCache
+ * @returns {string} The newly generated 32-hex sign
+ */
+export function resetSignCredential() {
+  const newSign = random(16);
+  save('sign', newSign);
+  state.si.sign = newSign;
+  state.si.uid = '';
+  state.si.sid = '';
+  directLinkCache.clear();
+  return newSign;
+}
+
+/**
+ * Display categorized API error modal with actionable remedies
+ * @param {string} rawMsg - Raw error message from backend
+ * @param {string} [title] - Fallback title
+ * @param {Function} [onResetSuccess] - Callback executed when sign is reset via dialog
+ */
+export function showSmartErrorDialog(rawMsg = '', title = '请求失败', onResetSuccess) {
+  if (typeof document === 'undefined') return;
+
+  const msg = String(rawMsg || '');
+  const isBindingConflict =
+    msg.includes('sign 与 uid') ||
+    msg.includes('存在绑定') ||
+    (msg.includes('绑定') && (msg.includes('不匹配') || msg.includes('冲突')));
+  const isQuotaLimit =
+    msg.includes('配额') ||
+    msg.includes('每小时') ||
+    msg.includes('5个') ||
+    msg.includes('频繁') ||
+    ((msg.includes('超过') || msg.includes('达到') || msg.includes('已达')) && (msg.includes('上限') || msg.includes('限制') || msg.includes('配额'))) ||
+    (msg.includes('解析') && (msg.includes('次数') || msg.includes('限制')));
+
+  if (isBindingConflict) {
+    dialog(`
+      <div class="space-y-3.5 py-1 text-left">
+        <div class="flex items-center gap-2 text-amber-600">
+          <i class="bi-exclamation-octagon-fill text-2xl"></i>
+          <h3 class="text-base font-bold text-slate-800">解析凭证与网盘账号绑定冲突</h3>
+        </div>
+        <div class="text-xs text-slate-600 leading-relaxed bg-amber-50/80 border border-amber-200/80 rounded-lg p-3 space-y-1.5">
+          <p class="font-medium text-amber-900">服务端报错：${escapeHtml(msg)}</p>
+          <p>当前客户端的 <code>Sign</code> 凭证已与此前解析过的网盘账号（UID）在服务端绑定（有效期 1 小时）。检测到您当前分享链接来自不同的网盘账号，因此被服务端拦截。</p>
+        </div>
+        <div class="text-xs text-slate-600 space-y-1">
+          <p class="font-medium text-slate-700">解决对策：</p>
+          <p>点击下方按钮<b>立即重置客户端凭证</b>，重新生成随机 Sign 并解除旧 UID 绑定，即可正常解析新分享链接。</p>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg" onclick="document.getElementById('liveDialog').close()">取消</button>
+          <button type="button" id="btnDialogResetSign" class="px-3.5 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg shadow-xs flex items-center gap-1 cursor-pointer">
+            <i class="bi-arrow-repeat"></i> 重置凭证并重试
+          </button>
+        </div>
+      </div>
+    `);
+    const btn = document.getElementById('btnDialogResetSign');
+    if (btn) {
+      btn.onclick = () => {
+        const newSign = resetSignCredential();
+        xdialog();
+        toast(`凭证已重置 (Sign: ${newSign.slice(0, 8)}...)`);
+        if (typeof onResetSuccess === 'function') onResetSuccess();
+      };
+    }
+    return;
+  }
+
+  if (isQuotaLimit) {
+    dialog(`
+      <div class="space-y-3.5 py-1 text-left">
+        <div class="flex items-center gap-2 text-red-600">
+          <i class="bi-shield-exclamation text-2xl"></i>
+          <h3 class="text-base font-bold text-slate-800">每小时解析配额已达上限</h3>
+        </div>
+        <div class="text-xs text-slate-600 leading-relaxed bg-red-50/80 border border-red-200/80 rounded-lg p-3 space-y-1.5">
+          <p class="font-medium text-red-900">服务端反馈：${escapeHtml(msg)}</p>
+          <p>第三方解析服务为保护其百度网盘 SVIP 账号免遭官方风控，限制<b>单个网盘账号（UID）每小时约解析 5 个文件</b>。</p>
+          <p class="text-red-700"><b>特别说明：</b>使用代理 IP（如 SOCKS5）无法突破限制，因为服务端的配额基于网盘文件的创建者 <code>UID</code> 计数，而非客户端 IP。</p>
+        </div>
+        <div class="text-xs text-slate-600 space-y-1.5">
+          <p class="font-medium text-slate-700">推荐突破对策：</p>
+          <ul class="list-disc list-inside space-y-1 pl-1 text-slate-600">
+            <li><b>多账号轮换法（推荐）</b>：将待下载的后续文件转存至<b>另一个百度网盘账号（小号）</b>并创建新分享。转存完成后，点击下方「重置解析凭证」即可立刻继续解析！</li>
+            <li><b>稍后重试</b>：等待约 1 小时后服务端将自动刷新解绑当前网盘账号。</li>
+          </ul>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg" onclick="document.getElementById('liveDialog').close()">我知道了</button>
+          <button type="button" id="btnDialogResetSign" class="px-3.5 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-xs flex items-center gap-1 cursor-pointer">
+            <i class="bi-arrow-repeat"></i> 重置凭证（切换小号）
+          </button>
+        </div>
+      </div>
+    `);
+    const btn = document.getElementById('btnDialogResetSign');
+    if (btn) {
+      btn.onclick = () => {
+        const newSign = resetSignCredential();
+        xdialog();
+        toast(`凭证已重置 (Sign: ${newSign.slice(0, 8)}...)，请粘贴小号分享链接`);
+        if (typeof onResetSuccess === 'function') onResetSuccess();
+      };
+    }
+    return;
+  }
+
+  // General error dialog
+  dialog(`
+    <div class="text-center py-3">
+      <div class="text-red-500 text-2xl mb-2"><i class="bi-exclamation-triangle"></i></div>
+      <h3 class="text-base font-semibold text-slate-800 mb-1.5">${escapeHtml(title)}</h3>
+      <p class="text-xs text-slate-600 mb-4 whitespace-pre-wrap break-words">${escapeHtml(msg || '未知异常，请检查网络或稍后重试')}</p>
+      <button type="button" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs rounded-lg transition cursor-pointer" onclick="document.getElementById('liveDialog').close()">关闭</button>
+    </div>
+  `);
+}
 
 // Reactive state proxy for DOM data binding
 const reactiveData = new Proxy(box.data, {
@@ -255,14 +389,7 @@ export function showDownloadOptionsModal(fid, fileName, fileSize) {
 
   resolveDirectLink(fid).then(resolved => {
     if (!resolved.ok) {
-      dialog(`
-        <div class="text-center py-4">
-          <div class="text-red-500 text-3xl mb-2"><i class="bi-exclamation-triangle"></i></div>
-          <h3 class="text-base font-semibold text-slate-800 mb-2">解析失败</h3>
-          <p class="text-sm text-slate-600 mb-4">${escapeHtml(resolved.message)}</p>
-          <button type="button" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-lg" onclick="document.getElementById('liveDialog').close()">关闭</button>
-        </div>
-      `);
+      showSmartErrorDialog(resolved.message, '获取直链失败');
       return;
     }
 
@@ -395,14 +522,7 @@ export function showDownloadOptionsModal(fid, fileName, fileSize) {
 
     dialog(modalEl);
   }).catch(err => {
-    dialog(`
-      <div class="text-center py-4">
-        <div class="text-red-500 text-3xl mb-2"><i class="bi-exclamation-triangle"></i></div>
-        <h3 class="text-base font-semibold text-slate-800 mb-2">解析失败</h3>
-        <p class="text-sm text-slate-600 mb-4">${escapeHtml(err?.message || '直链解析异常')}</p>
-        <button type="button" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-lg" onclick="document.getElementById('liveDialog').close()">关闭</button>
-      </div>
-    `);
+    showSmartErrorDialog(err?.message || '直链解析异常', '解析失败');
   });
 }
 
@@ -419,6 +539,15 @@ function initHomePage() {
 
   // Clear unrendered template placeholder row from home.html
   reactiveData.files = [];
+
+  // Reset Sign button handler
+  const resetSignBtn = document.getElementById('btnResetSign');
+  if (resetSignBtn) {
+    resetSignBtn.addEventListener('click', () => {
+      const newSign = resetSignCredential();
+      toast(`已重置解析凭证 (Sign: ${newSign.slice(0, 8)}...)`);
+    });
+  }
 
   // Select all on focus
   urlInput.addEventListener('focus', e => e.target.select());
@@ -484,7 +613,9 @@ function initHomePage() {
     try {
       const res = await fetchShareInfo(state.si);
       if (res.code !== 0) {
-        dialog(`解析失败：\n${res.message || '未知错误'}`);
+        showSmartErrorDialog(res.message, '解析分享链接失败', () => {
+          urlInput.focus();
+        });
         return;
       }
 
@@ -533,7 +664,7 @@ function initHomePage() {
             onBack: () => showDownloadOptionsModal(fid, fileName, fileSize),
           });
         } else {
-          dialog(`获取直链失败：${res.message}`);
+          showSmartErrorDialog(res.message, '获取直链失败');
         }
         return;
       }
@@ -556,7 +687,7 @@ function initHomePage() {
         const res = await resolveDirectLink(fid);
         btn.innerHTML = prev;
         if (!res.ok) {
-          dialog(`获取直链失败：${res.message}`);
+          showSmartErrorDialog(res.message, '获取直链失败');
           return;
         }
 
