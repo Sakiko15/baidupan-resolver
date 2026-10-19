@@ -18,6 +18,9 @@ RUN npm run build
 # ==========================================
 FROM nginx:alpine
 
+# Install tzdata for Alpine timezone support
+RUN apk add --no-cache tzdata
+
 # Clear default nginx web files
 RUN rm -rf /usr/share/nginx/html/*
 

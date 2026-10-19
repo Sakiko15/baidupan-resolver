@@ -1,17 +1,22 @@
 /**
  * Automated Verification Test Suite
  * Tests unit utilities, API routing logic, Aria2 payload construction,
- * share link parser, and end-to-end simulated flow.
+ * share link parser, router fallback, and infrastructure configs.
  */
 
 import assert from 'node:assert';
 import { test, describe } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { random, fixpath, cut, tpl, xbody } from '../src/utils.js';
+import { random, fixpath, cut, tpl, xbody, escapeHtml, escapeShellArg } from '../src/utils.js';
+import { parseBaiduShareText } from '../src/main.js';
+import { buildAria2Payload } from '../src/aria2.js';
+import { Router } from '../src/router.js';
 import { API_BASE } from '../src/api.js';
 
-describe('1. Utility Functions', () => {
+const baseDir = import.meta.dirname || process.cwd();
+
+describe('1. Utility Functions & Security Sanitization', () => {
   test('random() generates 32-hex character sign', () => {
     const sign = random(16);
     assert.strictEqual(typeof sign, 'string');
@@ -30,28 +35,60 @@ describe('1. Utility Functions', () => {
     assert.doesNotMatch(output, /\/{2,}/);
   });
 
-  test('cut() slices between delimiters correctly', () => {
+  test('cut() slices between delimiters correctly and returns empty string if delimiter missing', () => {
     const url = 'https://pan.baidu.com/s/1abcdef123?pwd=abcd';
     const surl = cut(url, '/s/1', '?');
     assert.strictEqual(surl, 'abcdef123');
 
     const pwd = cut(url, 'pwd=');
     assert.strictEqual(pwd, 'abcd');
+
+    // Missing delimiter returns empty string, avoiding accidental startIdx=0 fallback
+    const missing = cut('https://pan.baidu.com/s/1abcdef123', '/s/2', '?');
+    assert.strictEqual(missing, '');
   });
 
-  test('tpl() correctly renders template placeholders [prop]', () => {
+  test('escapeHtml() correctly escapes &, <, >, ", and \'', () => {
+    assert.strictEqual(
+      escapeHtml('<script>alert("xss")</script>'),
+      '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+    );
+    assert.strictEqual(escapeHtml("Tom & 'Jerry'"), 'Tom &amp; &#39;Jerry&#39;');
+    assert.strictEqual(escapeHtml(null), '');
+    assert.strictEqual(escapeHtml(undefined), '');
+  });
+
+  test('escapeShellArg() safely wraps arguments and neutralizes command injection payloads', () => {
+    assert.strictEqual(escapeShellArg('video$(whoami).mp4'), "'video$(whoami).mp4'");
+    assert.strictEqual(escapeShellArg('file`id`.mp4'), "'file`id`.mp4'");
+    assert.strictEqual(escapeShellArg('file; rm -rf /;'), "'file; rm -rf /;'");
+    assert.strictEqual(escapeShellArg("O'Reilly.mp4"), "'O'\\''Reilly.mp4'");
+  });
+
+  test('tpl() correctly renders template placeholders and protects against null items and XSS', () => {
     const template = '<tr><td>[size] MB</td><td>[name]</td><td data-fid="[fid]">[fid]</td></tr>';
     const data = [
-      { size: '1024', name: 'video.mp4', fid: '101' },
+      { size: '1024', name: '<script>evil.js</script>', fid: '101' },
+      null,
+      undefined,
       { size: '256', name: 'doc.pdf', fid: '102' },
     ];
     const rendered = tpl(template, data);
+    // Escaped XSS
+    assert.ok(rendered.includes('&lt;script&gt;evil.js&lt;/script&gt;'));
+    assert.ok(!rendered.includes('<script>evil.js</script>'));
+    // Safe items rendered
     assert.ok(rendered.includes('1024 MB'));
-    assert.ok(rendered.includes('video.mp4'));
     assert.ok(rendered.includes('data-fid="101"'));
     assert.ok(rendered.includes('256 MB'));
     assert.ok(rendered.includes('doc.pdf'));
     assert.ok(rendered.includes('data-fid="102"'));
+  });
+
+  test('tpl() supports escape=false when raw rendering is desired', () => {
+    const template = '<div>[content]</div>';
+    const rendered = tpl(template, { content: '<b>bold</b>' }, false);
+    assert.strictEqual(rendered, '<div><b>bold</b></div>');
   });
 });
 
@@ -62,37 +99,23 @@ describe('2. API Base & Relative Path Configuration', () => {
   });
 });
 
-describe('3. Baidu Netdisk Link Parsing & Extraction', () => {
-  function parseBaiduShareText(text = '') {
-    const clean = text.replaceAll(/[^\x20-\x7E\u4e00-\u9fa5]/g, ' ');
-    let surl = '';
-    let pwd = '';
-
-    const urlMatch = clean.match(/https?:\/\/pan\.baidu\.com\/s\/([a-zA-Z0-9_-]+)/i);
-    if (urlMatch) {
-      surl = urlMatch[1];
-      if (surl.startsWith('1')) {
-        surl = surl.slice(1);
-      }
-    }
-
-    const pwdParamMatch = clean.match(/[?&]pwd=([a-zA-Z0-9]{4})/i);
-    if (pwdParamMatch) {
-      pwd = pwdParamMatch[1];
-    } else {
-      const pwdTextMatch = clean.match(/(?:提取码|密码|pwd)[:：\s]*([a-zA-Z0-9]{4})/i);
-      if (pwdTextMatch) {
-        pwd = pwdTextMatch[1];
-      }
-    }
-
-    return { surl, pwd };
-  }
-
+describe('3. Baidu Netdisk Link Parsing & Extraction (Production Module)', () => {
   test('Parses plain standard link', () => {
     const res = parseBaiduShareText('https://pan.baidu.com/s/1ab_CD-12');
     assert.strictEqual(res.surl, 'ab_CD-12');
     assert.strictEqual(res.pwd, '');
+  });
+
+  test('Parses link without https:// protocol scheme', () => {
+    const res = parseBaiduShareText('pan.baidu.com/s/1noProtocolCode 提取码: 5678');
+    assert.strictEqual(res.surl, 'noProtocolCode');
+    assert.strictEqual(res.pwd, '5678');
+  });
+
+  test('Parses link without leading 1 in surl', () => {
+    const res = parseBaiduShareText('https://pan.baidu.com/s/directCode123?pwd=abcd');
+    assert.strictEqual(res.surl, 'directCode123');
+    assert.strictEqual(res.pwd, 'abcd');
   });
 
   test('Parses link with ?pwd= query parameter', () => {
@@ -116,52 +139,86 @@ describe('3. Baidu Netdisk Link Parsing & Extraction', () => {
   });
 });
 
-describe('4. Aria2 / Motrix RPC Payload Generation', () => {
-  test('Constructs valid aria2.addUri payload', () => {
-    const config = { token: 'secret_rpc_token', jsonrpc: 'http://localhost:16800/jsonrpc' };
+describe('4. Aria2 / Motrix RPC Payload Generation & Secret Token Protocol', () => {
+  test('Constructs valid aria2.addUri payload with secret token', () => {
     const urls = ['https://d.pcs.baidu.com/file/sample_download_url'];
-    const info = { out: 'Sample:Movie*2025.mp4', 'user-agent': 'netdisk' };
-
-    const payload = {
-      id: 'test_uid_1',
-      method: 'aria2.addUri',
-      params: [
-        `token:${config.token}`,
-        urls,
-        {
-          out: fixpath(info.out),
-          'user-agent': info['user-agent'] || 'netdisk',
-        },
-      ],
-    };
+    const info = { out: fixpath('Sample:Movie*2025.mp4'), 'user-agent': 'netdisk' };
+    const payload = buildAria2Payload('aria2.addUri', [urls, info], 'secret_rpc_token');
 
     assert.strictEqual(payload.method, 'aria2.addUri');
+    assert.strictEqual(payload.params.length, 3);
     assert.strictEqual(payload.params[0], 'token:secret_rpc_token');
     assert.deepStrictEqual(payload.params[1], ['https://d.pcs.baidu.com/file/sample_download_url']);
     assert.strictEqual(payload.params[2].out, 'SampleMovie2025.mp4');
     assert.strictEqual(payload.params[2]['user-agent'], 'netdisk');
   });
-});
 
-describe('5. cURL Download Command Generation', () => {
-  test('Generates correct cURL download command with User-Agent and output filename', () => {
-    const url = 'https://d.pcs.baidu.com/file/sample.mp4';
-    const filename = 'Test Video 2025.mp4';
-    const ua = 'netdisk';
-    const cmd = `curl -L -A "${ua}" -o "${filename}" "${url}"`;
+  test('Omits token: prefix entirely when token is empty or whitespace (Aria2 spec compliance)', () => {
+    const urls = ['https://d.pcs.baidu.com/file/sample_download_url'];
+    const info = { out: 'video.mp4', 'user-agent': 'netdisk' };
+    const payloadNoToken = buildAria2Payload('aria2.addUri', [urls, info], '');
 
-    assert.strictEqual(cmd, 'curl -L -A "netdisk" -o "Test Video 2025.mp4" "https://d.pcs.baidu.com/file/sample.mp4"');
+    assert.strictEqual(payloadNoToken.method, 'aria2.addUri');
+    assert.strictEqual(payloadNoToken.params.length, 2);
+    assert.deepStrictEqual(payloadNoToken.params[0], urls);
+    assert.deepStrictEqual(payloadNoToken.params[1], info);
+
+    const payloadWhitespaceToken = buildAria2Payload('aria2.addUri', [urls, info], '   ');
+    assert.strictEqual(payloadWhitespaceToken.params.length, 2);
+    assert.deepStrictEqual(payloadWhitespaceToken.params[0], urls);
   });
 });
 
-describe('6. Nginx Configuration Rules Verification', () => {
-  const confPath = path.resolve(import.meta.dirname, '../nginx/default.conf');
+describe('5. cURL Download Command Generation & Shell Injection Prevention', () => {
+  test('Generates single-quote wrapped cURL download command resistant to injection', () => {
+    const url = 'https://d.pcs.baidu.com/file/sample.mp4?sign=abc';
+    const filename = 'Test; rm -rf /; `id` $(whoami).mp4';
+    const ua = 'netdisk; bash -i';
+    const cmd = `curl -L -A ${escapeShellArg(ua)} -o ${escapeShellArg(filename)} ${escapeShellArg(url)}`;
+
+    assert.strictEqual(
+      cmd,
+      "curl -L -A 'netdisk; bash -i' -o 'Test; rm -rf /; `id` $(whoami).mp4' 'https://d.pcs.baidu.com/file/sample.mp4?sign=abc'"
+    );
+  });
+});
+
+describe('6. SPA Micro-Router Navigation & Fallback', () => {
+  const router = new Router();
+
+  test('resolvePage() falls back to "home" when visiting index.html to prevent infinite spinner', () => {
+    assert.strictEqual(router.resolvePage('http://localhost:5173/index.html').name, 'home');
+    assert.strictEqual(router.resolvePage('http://localhost:5173/index').name, 'home');
+    assert.strictEqual(router.resolvePage('http://localhost:5173/').name, 'home');
+    assert.strictEqual(router.resolvePage('http://localhost:5173').name, 'home');
+  });
+
+  test('resolvePage() resolves valid subpage names correctly', () => {
+    assert.strictEqual(router.resolvePage('http://localhost:5173/settings.html').name, 'settings');
+    assert.strictEqual(router.resolvePage('http://localhost:5173/about').name, 'about');
+  });
+
+  test('resolvePage() rejects invalid/malicious page names and falls back to "home"', () => {
+    assert.strictEqual(router.resolvePage('http://localhost:5173/..%2F..%2Fetc%2Fpasswd').name, 'home');
+    assert.strictEqual(router.resolvePage('http://localhost:5173/x').name, 'home'); // min length 2
+  });
+});
+
+describe('7. Nginx Configuration Rules Verification', () => {
+  const confPath = path.resolve(baseDir, '../nginx/default.conf');
   const conf = fs.readFileSync(confPath, 'utf-8');
 
-  test('Contains upstream reverse proxy for /api/ to mxd.indevs.in', () => {
+  test('Contains upstream reverse proxy with HTTP 1.1 keep-alive for /api/ to mxd.indevs.in', () => {
     assert.ok(conf.includes('location /api/'));
     assert.ok(conf.includes('proxy_pass http://mxd.indevs.in/api/;'));
+    assert.ok(conf.includes('proxy_http_version 1.1;'));
+    assert.ok(conf.includes('proxy_set_header Connection "";'));
     assert.ok(conf.includes('proxy_set_header Host mxd.indevs.in;'));
+  });
+
+  test('Contains essential security headers (X-Content-Type-Options, X-Frame-Options)', () => {
+    assert.ok(conf.includes('add_header X-Content-Type-Options "nosniff" always;'));
+    assert.ok(conf.includes('add_header X-Frame-Options "SAMEORIGIN" always;'));
   });
 
   test('Configures Gzip compression', () => {
@@ -182,8 +239,8 @@ describe('6. Nginx Configuration Rules Verification', () => {
   });
 });
 
-describe('7. Docker Configuration Verification', () => {
-  const dockerfilePath = path.resolve(import.meta.dirname, '../Dockerfile');
+describe('8. Docker & Infrastructure Configuration Verification', () => {
+  const dockerfilePath = path.resolve(baseDir, '../Dockerfile');
   const dockerfile = fs.readFileSync(dockerfilePath, 'utf-8');
 
   test('Dockerfile has multi-stage build (node builder -> nginx runner)', () => {
@@ -193,11 +250,24 @@ describe('7. Docker Configuration Verification', () => {
     assert.ok(dockerfile.includes('COPY nginx/default.conf /etc/nginx/conf.d/default.conf'));
   });
 
-  const composePath = path.resolve(import.meta.dirname, '../docker-compose.yml');
+  test('Dockerfile installs tzdata package in Alpine runner for timezone support', () => {
+    assert.ok(dockerfile.includes('apk add --no-cache tzdata'));
+  });
+
+  const composePath = path.resolve(baseDir, '../docker-compose.yml');
   const compose = fs.readFileSync(composePath, 'utf-8');
 
-  test('docker-compose.yml defines web service and port 8080:80', () => {
+  test('docker-compose.yml defines web service, port 8080:80, and does not contain deprecated version key', () => {
     assert.ok(compose.includes('services:'));
     assert.ok(compose.includes('8080:80'));
+    assert.ok(compose.includes('TZ=Asia/Shanghai'));
+    assert.doesNotMatch(compose, /^version:/m);
+  });
+
+  const dockerignorePath = path.resolve(baseDir, '../.dockerignore');
+  const dockerignore = fs.readFileSync(dockerignorePath, 'utf-8');
+
+  test('.dockerignore does not contain internal tool protocol local://*', () => {
+    assert.doesNotMatch(dockerignore, /local:\/\//);
   });
 });

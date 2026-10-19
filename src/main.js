@@ -2,7 +2,6 @@
  * Main application entry point
  */
 
-import './style.css';
 import {
   random,
   fixpath,
@@ -15,7 +14,11 @@ import {
   xdialog,
   toast,
   copyToClipboard,
+  escapeHtml,
+  escapeShellArg,
 } from './utils.js';
+
+export { escapeShellArg };
 import { fetchShareInfo, fetchDirectLink } from './api.js';
 import {
   getAria2Config,
@@ -32,7 +35,7 @@ const state = {
     surl: '',
     pwd: '',
     sign: '',
-    site: location.hostname,
+    site: typeof location !== 'undefined' ? location.hostname : '',
     uid: '',
     sid: '',
   },
@@ -55,14 +58,12 @@ globalThis.box = box;
 // Reactive state proxy for DOM data binding
 const reactiveData = new Proxy(box.data, {
   set(target, prop, value, receiver) {
-    document.querySelectorAll(`[data-json="${prop}"]`).forEach(el => {
-      el.dataset.html ??= el.innerHTML;
-      if (!value || (Array.isArray(value) && value.length === 0)) {
-        el.innerHTML = '';
-        return;
-      }
-      el.innerHTML = tpl(el.dataset.html, value);
-    });
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll(`[data-json="${prop}"]`).forEach(el => {
+        el.dataset.html ??= el.innerHTML;
+        el.innerHTML = tpl(el.dataset.html, value);
+      });
+    }
     return Reflect.set(target, prop, value, receiver);
   },
 });
@@ -77,13 +78,13 @@ function isValidBaiduUrl(url = '') {
 /**
  * Extract surl and pwd from text
  */
-function parseBaiduShareText(text = '') {
+export function parseBaiduShareText(text = '') {
   const clean = text.replaceAll(/[^\x20-\x7E\u4e00-\u9fa5]/g, ' ');
   let surl = '';
   let pwd = '';
 
-  // Match URL: pan.baidu.com/s/1[a-zA-Z0-9_-]+
-  const urlMatch = clean.match(/https?:\/\/pan\.baidu\.com\/s\/([a-zA-Z0-9_-]+)/i);
+  // Match URL: pan.baidu.com/s/1[a-zA-Z0-9_-]+ or pan.baidu.com/s/[a-zA-Z0-9_-]+
+  const urlMatch = clean.match(/(?:https?:\/\/)?pan\.baidu\.com\/s\/([a-zA-Z0-9_-]+)/i);
   if (urlMatch) {
     surl = urlMatch[1];
     if (surl.startsWith('1')) {
@@ -168,7 +169,7 @@ async function showDownloadOptionsModal(fid, fileName, fileSize) {
       <div class="text-center py-4">
         <div class="text-red-500 text-3xl mb-2"><i class="bi-exclamation-triangle"></i></div>
         <h3 class="text-base font-semibold text-slate-800 mb-2">解析失败</h3>
-        <p class="text-sm text-slate-600 mb-4">${resolved.message}</p>
+        <p class="text-sm text-slate-600 mb-4">${escapeHtml(resolved.message)}</p>
         <button type="button" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-lg" onclick="document.getElementById('liveDialog').close()">关闭</button>
       </div>
     `);
@@ -178,25 +179,29 @@ async function showDownloadOptionsModal(fid, fileName, fileSize) {
   const { url, info } = resolved;
   const outName = info.out || fileName || '未命名文件';
   const ua = info['user-agent'] || 'netdisk';
-  const curlCmd = `curl -L -A "${ua}" -o "${outName}" "${url}"`;
+  const safeOutName = escapeHtml(outName);
+  const safeFileSize = escapeHtml(fileSize || '--');
+  const safeUa = escapeHtml(ua);
+  const safeUrl = escapeHtml(url);
+  const curlCmd = `curl -L -A ${escapeShellArg(ua)} -o ${escapeShellArg(outName)} ${escapeShellArg(url)}`;
 
   const modalEl = document.createElement('div');
   modalEl.className = 'download-modal space-y-4';
   modalEl.innerHTML = `
     <div class="border-b border-slate-200 pb-3">
-      <h3 class="text-base font-bold text-slate-800 truncate" title="${outName}">
-        <i class="bi-file-earmark-arrow-down mr-1.5 text-blue-600"></i>${outName}
+      <h3 class="text-base font-bold text-slate-800 truncate" title="${safeOutName}">
+        <i class="bi-file-earmark-arrow-down mr-1.5 text-blue-600"></i>${safeOutName}
       </h3>
       <div class="flex items-center gap-3 text-xs text-slate-500 mt-1">
-        <span>大小: ${fileSize || '--'} MB</span>
-        <span>User-Agent: ${ua}</span>
+        <span>大小: ${safeFileSize} MB</span>
+        <span>User-Agent: ${safeUa}</span>
       </div>
     </div>
 
     <div class="space-y-1.5">
       <label class="text-xs font-semibold text-slate-700">直链下载地址</label>
       <div class="relative">
-        <input type="text" readonly value="${url}" class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2.5 py-2 text-slate-700 select-all pr-16" id="directUrlInput">
+        <input type="text" readonly value="${safeUrl}" class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2.5 py-2 text-slate-700 select-all pr-16" id="directUrlInput">
         <button type="button" class="absolute right-1 top-1 bottom-1 px-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs rounded transition flex items-center gap-1" id="copyUrlBtn">
           <i class="bi-clipboard"></i> 复制
         </button>
@@ -272,6 +277,9 @@ function initHomePage() {
   const filesContainer = document.querySelector('tbody[data-json="files"]');
 
   if (!urlInput || !openBtn) return;
+
+  // Clear unrendered template placeholder row from home.html
+  reactiveData.files = [];
 
   // Select all on focus
   urlInput.addEventListener('focus', e => e.target.select());
@@ -424,9 +432,11 @@ function initHomePage() {
 }
 
 // Router initialization
-new Router({
-  basePath: document.body.dataset.site || '',
-  pages: {
-    home: initHomePage,
-  },
-});
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  new Router({
+    basePath: document.body?.dataset?.site || '',
+    pages: {
+      home: initHomePage,
+    },
+  });
+}

@@ -58,10 +58,30 @@ npm run preview
 
 ## 🐳 Docker & 服务器一键部署
 
-本仓库提供了基于多阶段构建的 `Dockerfile` 与 `docker-compose.yml`，在生产服务器上只需一条命令即可完成从源码编译到 Nginx 托管的全流程：
+本仓库提供了基于多阶段构建的 `Dockerfile` 与 `docker-compose.yml`，并集成了 GitHub Actions 自动构建多架构 Docker 镜像推送至 GHCR。
 
-### 方式 A：Docker Compose 部署（推荐）
+### 方式 A：1Panel 容器编排一键部署（推荐）
 
+1. 登录 1Panel 管理面板，进入 **「容器」** -> **「编排」** -> 点击 **「创建编排」**；
+2. 编排名称填写 `baidupan-resolver`；
+3. 在 Compose 内容框中粘贴以下 YAML 配置（端口可根据实际需要修改）：
+
+```yaml
+services:
+  baidupan-web:
+    image: ghcr.io/sakiko15/baidupan-resolver:latest
+    container_name: baidupan-resolver
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - TZ=Asia/Shanghai
+```
+
+4. 点击 **「确认」**，1Panel 将自动拉取镜像并启动容器；
+5. （可选）在 1Panel **「网站」** 中添加反向代理，代理地址填写 `http://127.0.0.1:8080`，并一键申请 Let's Encrypt SSL 证书实现 HTTPS 访问。
+
+### 方式 B：本地 Docker Compose 部署（源码自编译）
 ```bash
 # 启动容器（后台运行，映射宿主机 8080 端口）
 docker compose up -d --build

@@ -24,6 +24,26 @@ export function saveAria2Config(config) {
 }
 
 /**
+ * Build Aria2 JSON-RPC payload with optional token authentication
+ * @param {string} method
+ * @param {Array} methodParams
+ * @param {string} [token]
+ * @returns {Object}
+ */
+export function buildAria2Payload(method, methodParams = [], token = '') {
+  const params = [];
+  if (token?.trim()) {
+    params.push(`token:${token.trim()}`);
+  }
+  params.push(...methodParams);
+  return {
+    id: uid(),
+    method,
+    params,
+  };
+}
+
+/**
  * Test connectivity with Motrix / Aria2 JSON-RPC endpoint
  * @param {Object} [config]
  * @returns {Promise<boolean>}
@@ -32,11 +52,7 @@ export async function checkConnection(config = getAria2Config()) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 1000);
 
-  const payload = {
-    id: uid(),
-    method: 'aria2.changeGlobalOption',
-    params: [`token:${config.token || ''}`, { 'max-concurrent-downloads': '2' }],
-  };
+  const payload = buildAria2Payload('aria2.changeGlobalOption', [{ 'max-concurrent-downloads': '2' }], config.token);
 
   try {
     const res = await fetch(config.jsonrpc || DEFAULT_CONFIG.jsonrpc, {
@@ -61,28 +77,28 @@ export async function checkConnection(config = getAria2Config()) {
  * @param {Object} [config]
  * @returns {Promise<{code: number, result?: any, message?: string}>}
  */
-export async function addDownloadTask(urls, info = {}, config = getAria2Config()) {
+export async function addDownloadTask(urls, info = {}, config = getAria2Config(), timeoutMs = 15000) {
   const urlList = Array.isArray(urls) ? urls : [urls];
   const filename = fixpath(info.out || '');
   const userAgent = info['user-agent'] || 'netdisk';
 
-  const payload = {
-    id: uid(),
-    method: 'aria2.addUri',
-    params: [
-      `token:${config.token || ''}`,
+  const payload = buildAria2Payload(
+    'aria2.addUri',
+    [
       urlList,
       {
         out: filename,
         'user-agent': userAgent,
       },
     ],
-  };
+    config.token
+  );
 
   try {
     const res = await fetch(config.jsonrpc || DEFAULT_CONFIG.jsonrpc, {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const json = await res.json();
     if (json.error) {
@@ -90,7 +106,8 @@ export async function addDownloadTask(urls, info = {}, config = getAria2Config()
     }
     return { code: 0, result: json.result };
   } catch (err) {
-    return { code: 1, message: err.message || 'Aria2 请求失败' };
+    const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timeout');
+    return { code: 1, message: isTimeout ? 'Aria2 推送超时' : (err.message || 'Aria2 请求失败') };
   }
 }
 
@@ -129,7 +146,10 @@ export function showConfigDialog(onSave) {
 
   formEl.addEventListener('submit', e => {
     e.preventDefault();
-    const updated = { ...currentConfig, ...xbody(formEl) };
+    const fd = new FormData(formEl);
+    const jsonrpc = (fd.get('jsonrpc') || '').toString().trim() || DEFAULT_CONFIG.jsonrpc;
+    const token = (fd.get('token') || '').toString().trim();
+    const updated = { jsonrpc, token };
     saveAria2Config(updated);
     xdialog();
     if (typeof onSave === 'function') onSave(updated);

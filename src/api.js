@@ -13,12 +13,13 @@ export const API_BASE = (import.meta.env?.VITE_API_BASE ?? '').replace(/\/+$/, '
  * @param {Object} params - { sign, site, surl, pwd }
  * @returns {Promise<{code: number, share?: {uid: string, sid: string}, list?: Array, message?: string}>}
  */
-export async function fetchShareInfo(params) {
+export async function fetchShareInfo(params, timeoutMs = 15000) {
   try {
     const res = await fetch(`${API_BASE}/api/dupansi`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       return { code: res.status, message: `HTTP 错误: ${res.status} ${res.statusText}` };
@@ -26,7 +27,8 @@ export async function fetchShareInfo(params) {
     const data = await res.json();
     return data;
   } catch (err) {
-    return { code: 1, message: err.message || '网络连接失败' };
+    const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timeout');
+    return { code: 1, message: isTimeout ? '请求超时，请检查网络后重试' : (err.message || '网络连接失败') };
   }
 }
 
@@ -35,12 +37,13 @@ export async function fetchShareInfo(params) {
  * @param {Object} params - { sign, site, surl, pwd, uid, sid, fid }
  * @returns {Promise<{code: number, data?: {url: string[], info: {out: string, 'user-agent': string}}, message?: string}>}
  */
-export async function fetchDirectLink(params) {
+export async function fetchDirectLink(params, timeoutMs = 15000) {
   try {
     const res = await fetch(`${API_BASE}/api/dupan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       return { code: res.status, message: `HTTP 错误: ${res.status} ${res.statusText}` };
@@ -48,6 +51,7 @@ export async function fetchDirectLink(params) {
     const data = await res.json();
     return data;
   } catch (err) {
-    return { code: 1, message: err.message || '网络连接失败' };
+    const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timeout');
+    return { code: 1, message: isTimeout ? '请求超时，请检查网络后重试' : (err.message || '网络连接失败') };
   }
 }

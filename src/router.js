@@ -4,6 +4,7 @@
 
 export class Router {
   constructor({ basePath = '', pages = {}, onRender } = {}) {
+    if (typeof document === 'undefined') return;
     this.mainEl = document.querySelector('main');
     if (!this.mainEl) return;
 
@@ -18,7 +19,7 @@ export class Router {
 
     window.addEventListener('popstate', e => {
       if (this.wait) return;
-      this.navigate(e.state || 'home');
+      this.navigate(e.state || this.resolvePage(location.href).name);
     });
 
     document.body.addEventListener('click', e => {
@@ -43,7 +44,8 @@ export class Router {
   }
 
   resolvePage(urlStr) {
-    const url = new URL(urlStr, location.href);
+    const base = typeof location !== 'undefined' ? location.href : 'http://localhost';
+    const url = new URL(urlStr, base);
     url.name = 'home';
     const path = url.pathname;
     if (path.length) {
@@ -54,7 +56,7 @@ export class Router {
       if (start < end) {
         url.name = path.slice(start, end);
       }
-      if (!/^[a-z0-9_-]{2,24}$/i.test(url.name)) {
+      if (!/^[a-z0-9_-]{2,24}$/i.test(url.name) || url.name === 'index') {
         url.name = 'home';
       }
     }

@@ -5,6 +5,20 @@
 export const now = () => Math.floor(Date.now() / 1000);
 export const uid = () => Date.now().toString(36);
 
+export function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+export function escapeShellArg(str) {
+  return "'" + String(str ?? '').replace(/'/g, "'\\''") + "'";
+}
+
 export function random(len = 16) {
   const arr = new Uint8Array(len);
   crypto.getRandomValues(arr);
@@ -20,7 +34,8 @@ export function cut(str, start, end) {
   let startIdx = 0;
   if (typeof start === 'string') {
     const pos = str.lastIndexOf(start);
-    startIdx = pos === -1 ? 0 : pos + start.length;
+    if (pos === -1) return '';
+    startIdx = pos + start.length;
   }
   let endIdx = str.length;
   if (typeof end === 'string') {
@@ -43,7 +58,11 @@ export function xbody(form) {
 
 export function save(key, val) {
   if (val !== undefined) {
-    localStorage.setItem(key, JSON.stringify(val));
+    try {
+      localStorage.setItem(key, JSON.stringify(val));
+    } catch {
+      // Ignore quota exceeded or private browsing errors
+    }
   }
 }
 
@@ -56,7 +75,7 @@ export function load(key, defaultVal) {
   }
 }
 
-export function tpl(template, data) {
+export function tpl(template, data, escape = true) {
   if (typeof template !== 'string' || !template.length) return '';
   const items = Array.isArray(data) ? data : [data];
   const chunks = [];
@@ -72,7 +91,11 @@ export function tpl(template, data) {
   return items.map(item =>
     chunks.map(chunk => {
       if (typeof chunk === 'string') return chunk;
-      return Object.hasOwn(item, chunk.key) ? item[chunk.key] : chunk.raw;
+      if (item && typeof item === 'object' && Object.hasOwn(item, chunk.key)) {
+        const val = item[chunk.key];
+        return escape ? escapeHtml(val) : (val ?? '');
+      }
+      return chunk.raw;
     }).join('')
   ).join('');
 }
@@ -95,7 +118,8 @@ export function dialog(content) {
   if (content instanceof HTMLElement) {
     dlg.replaceChildren(content);
   } else {
-    dlg.innerHTML = (content ?? '').toString().replaceAll('\n', '<br>');
+    const raw = (content ?? '').toString();
+    dlg.innerHTML = raw.includes('<') ? raw : raw.replaceAll('\n', '<br>');
   }
 
   if (!dlg.open) {

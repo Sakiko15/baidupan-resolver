@@ -17,8 +17,8 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       input: {
-        main: resolve(import.meta.dirname, 'index.html'),
-        home: resolve(import.meta.dirname, 'home.html'),
+        main: resolve(import.meta.dirname || process.cwd(), 'index.html'),
+        home: resolve(import.meta.dirname || process.cwd(), 'home.html'),
       },
     },
   },
