@@ -1,0 +1,254 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --dark: #1e293b;
+  --shadow: rgba(0, 0, 0, 0.08);
+  --light: rgba(255, 255, 255, 0.85);
+  --bright: rgba(255, 255, 255, 0.98);
+  --radius-lg: 0.625rem;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: #334155;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  min-height: 100dvh;
+  padding: 2.5rem 1rem;
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Loader Animation */
+.loader {
+  width: 56px;
+  height: 56px;
+  margin-inline: auto;
+  display: block;
+  position: relative;
+}
+
+.loader:before {
+  box-sizing: border-box;
+  border: 3.5px solid transparent;
+  content: "";
+  border-block-color: #3b82f6;
+  border-radius: 100%;
+  width: 56px;
+  height: 56px;
+  animation: 1.5s linear infinite spin;
+  position: absolute;
+}
+
+.loader:after {
+  box-sizing: border-box;
+  content: "";
+  border: 3px dashed #94a3b8;
+  border-radius: 100%;
+  width: 40px;
+  height: 40px;
+  animation: 3s linear infinite reverse spin;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(1turn); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+/* Forms & Search Input */
+form {
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background-color: var(--light);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+}
+
+form.search {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+form.search:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+form.search > input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.9375rem;
+  color: #1e293b;
+  padding: 0.625rem 0.5rem;
+}
+
+form.search > button {
+  background-color: #1e293b;
+  color: #ffffff;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.5rem 1.125rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  transition: background-color 0.15s;
+}
+
+form.search > button:hover {
+  background-color: #0f172a;
+}
+
+/* Table Styling */
+table.simple {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  border: 1px solid #e2e8f0;
+}
+
+table.simple tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 0.15s;
+}
+
+table.simple tr:last-child {
+  border-bottom: none;
+}
+
+table.simple tr:hover {
+  background-color: #f8fafc;
+}
+
+table.simple td {
+  padding: 0.875rem 1rem;
+  vertical-align: middle;
+}
+
+/* Modal Dialog */
+dialog#liveDialog {
+  cursor: default;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  background: #ffffff;
+  min-width: 20rem;
+  max-width: 32rem;
+  margin: auto;
+  padding: 1.75rem;
+  outline: none;
+}
+
+dialog#liveDialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+dialog#liveDialog form {
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+dialog#liveDialog label {
+  display: block;
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+dialog#liveDialog label:has(input) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.25rem;
+  background: #f8fafc;
+}
+
+dialog#liveDialog label:has(input:focus) {
+  border-color: #3b82f6;
+  background: #ffffff;
+}
+
+dialog#liveDialog input[type="text"] {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+dialog#liveDialog .group {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+dialog#liveDialog .group > button {
+  flex: 1;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  transition: all 0.15s;
+}
+
+dialog#liveDialog .group > button[type="button"] {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+dialog#liveDialog .group > button[type="button"]:hover {
+  background: #f1f5f9;
+}
+
+dialog#liveDialog .group > button[type="submit"] {
+  border: 1px solid transparent;
+  background: #1e293b;
+  color: #ffffff;
+}
+
+dialog#liveDialog .group > button[type="submit"]:hover {
+  background: #0f172a;
+}

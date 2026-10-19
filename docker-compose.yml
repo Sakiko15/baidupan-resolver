@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  baidupan-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: baidupan-resolver
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - TZ=Asia/Shanghai

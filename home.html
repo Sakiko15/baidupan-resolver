@@ -1,23 +1,67 @@
-<div class="center flex-col gap-6">
-  <div class="text-center" name="tip">每小时可解析5个任意大小文件 <a href="assets/dupan.zip" download>下载源码自己部署</a></div>
+<div class="center flex-col gap-5 w-full">
+  <!-- Brand & Header -->
+  <div class="text-center space-y-1">
+    <h1 class="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight flex items-center justify-center gap-2">
+      <i class="bi-cloud-arrow-down-fill text-blue-600"></i>
+      <span>百度网盘直链解析助手</span>
+    </h1>
+    <p class="text-xs sm:text-sm text-slate-500">
+      高速直链解析 · 支持浏览器直接下载 / Motrix / Aria2 推送 / cURL 导出
+    </p>
+  </div>
+
+  <!-- Notice & Tips -->
+  <div class="w-full bg-slate-50/90 border border-slate-200/80 rounded-xl p-3.5 text-xs text-slate-600 space-y-1 shadow-xs">
+    <div class="flex items-center gap-1.5 font-medium text-slate-700">
+      <i class="bi-info-circle text-blue-500"></i>
+      <span>使用须知与规范：</span>
+    </div>
+    <ul class="list-disc list-inside space-y-0.5 text-slate-500 pl-1">
+      <li>必须先将资源<b>转存到自己的网盘</b>再创建分享；仅解析根目录文件，子目录会被自动忽略。</li>
+      <li>服务端当前每小时配额约为 <b>5 个文件</b>，解析凭证每小时自动刷新解绑。</li>
+      <li>在「打开」按钮上<b>点击鼠标右键</b>可随时配置本地/远程 Motrix 或 Aria2 RPC 连接。</li>
+    </ul>
+  </div>
+
+  <!-- Search & Link Form -->
   <form class="search leading-12 h-12 w-full" method="dialog">
-    <input class="flex-auto indent-1" name="url" type="text" placeholder="请输入自己的百度网盘分享链接">
-    <i class="bi-lock"></i>
-    <input class="w-15 px-1" name="pwd" type="text" placeholder="提取码">
-    <button name="dupan" type="button"><i class="bi-search"></i> 打开</button>
+    <i class="bi-link-45deg text-lg text-slate-400 pl-2"></i>
+    <input class="flex-auto indent-1 text-sm" name="url" type="text" placeholder="粘贴百度网盘分享链接（支持自动识别提取码）" autocomplete="off" spellcheck="false">
+    <div class="h-6 w-px bg-slate-200 mx-1"></div>
+    <i class="bi-lock text-slate-400"></i>
+    <input class="w-16 px-1 text-sm font-mono text-center" name="pwd" type="text" placeholder="提取码" maxlength="6" autocomplete="off">
+    <button name="dupan" type="button" title="点击解析文件列表；右键点击配置 Motrix / Aria2 RPC">
+      <i class="bi-search"></i> 打开
+    </button>
   </form>
+
+  <!-- Resolved Files Table -->
   <div class="min-h-64 w-full">
-    <table class="simple w-full">
-      <colgroup>
-        <col class="w-26">
-        <col class="w-4">
-        <col>
-      </colgroup>
-      <tbody class="font-mono" data-json="files">
+    <table class="simple w-full text-slate-700">
+      <thead class="text-xs uppercase bg-slate-100/80 text-slate-500 border-b border-slate-200">
         <tr>
-          <td class="text-right">[size]<i class="ml-[2px]">MB</i></td>
-          <td><i class="bi-download"></i></td>
-          <td class="text-left px-0" data-fid="[fid]">[name]</td>
+          <th class="py-2.5 px-3 text-right w-24 sm:w-28 font-mono">大小</th>
+          <th class="py-2.5 px-3 text-left font-sans">文件名称</th>
+          <th class="py-2.5 px-3 text-right w-36 sm:w-48 font-sans">下载操作</th>
+        </tr>
+      </thead>
+      <tbody class="font-mono text-xs sm:text-sm divide-y divide-slate-100" data-json="files">
+        <tr class="group hover:bg-slate-50/80 transition-colors cursor-pointer" data-fid="[fid]" data-name="[name]" data-size="[size]">
+          <td class="size-col text-right text-slate-500 whitespace-nowrap py-3 px-3">[size] <span class="text-[11px] text-slate-400 font-sans">MB</span></td>
+          <td class="name-col text-left py-3 px-3 font-medium text-slate-800 break-all hover:text-blue-600 transition-colors">
+            <i class="bi-file-earmark mr-1.5 text-slate-400 group-hover:text-blue-500 transition-colors"></i>[name]
+          </td>
+          <td class="text-right py-3 px-3 whitespace-nowrap space-x-1">
+            <button type="button" class="action-browser text-xs px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 font-sans font-medium transition inline-flex items-center gap-1" title="浏览器直接下载" data-fid="[fid]">
+              <i class="bi-download"></i><span class="hidden sm:inline">下载</span>
+            </button>
+            <button type="button" class="action-motrix text-xs px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-sans font-medium transition inline-flex items-center gap-1" title="推送到 Motrix / Aria2" data-fid="[fid]">
+              <i class="bi-rocket-takeoff"></i><span class="hidden sm:inline">Motrix</span>
+            </button>
+            <button type="button" class="action-more text-xs px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 font-sans transition inline-flex items-center" title="更多选项 (复制直链 / cURL)" data-fid="[fid]">
+              <i class="bi-three-dots"></i>
+            </button>
+          </td>
         </tr>
       </tbody>
     </table>
