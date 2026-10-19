@@ -9,7 +9,7 @@ import { test, describe } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { random, fixpath, cut, tpl, xbody, escapeHtml, escapeShellArg, buildIdmCommand } from '../src/utils.js';
-import { parseBaiduShareText, getSignCredential, resetSignCredential, showSmartErrorDialog, resolveDirectLink, DIRECT_LINK_TTL, directLinkCache, state } from '../src/main.js';
+import { parseBaiduShareText, isValidBaiduUrl, getSignCredential, resetSignCredential, showSmartErrorDialog, resolveDirectLink, DIRECT_LINK_TTL, directLinkCache, state } from '../src/main.js';
 import { buildAria2Payload, checkConnection, normalizeRpcUrl } from '../src/aria2.js';
 import { Router } from '../src/router.js';
 import { API_BASE } from '../src/api.js';
@@ -812,5 +812,160 @@ describe('13. Codebase Audit Remediation: Concurrency Isolation, Cache TTL & Dia
     // Verify history.js has escapeHtml at dialog call sites
     const historyMatches = historyJs.match(/dialog\(`推送到 Motrix 失败：\$\{escapeHtml\(pushRes\.message\)\}`\)/g);
     assert.strictEqual(historyMatches?.length, 2, 'src/history.js should escape pushRes.message at both dialog call sites');
+  });
+});
+
+describe('14. Invalid Share Error Handling & Share URL Parser Resilience', () => {
+  test('parseBaiduShareText() correctly extracts surl and pwd from mobile pan.baidu.com/share/init?surl=... links', () => {
+    // Standard mobile link with ?surl= and &pwd=
+    const res1 = parseBaiduShareText('https://pan.baidu.com/share/init?surl=mock123&pwd=abcd');
+    assert.strictEqual(res1.surl, 'mock123');
+    assert.strictEqual(res1.pwd, 'abcd');
+
+    // Mobile link without protocol
+    const res2 = parseBaiduShareText('pan.baidu.com/share/init?surl=mockMobile456&pwd=7890');
+    assert.strictEqual(res2.surl, 'mockMobile456');
+    assert.strictEqual(res2.pwd, '7890');
+
+    // Mobile link with separate Chinese extraction code
+    const res3 = parseBaiduShareText('pan.baidu.com/share/init?surl=testKey999 提取码: wxyz');
+    assert.strictEqual(res3.surl, 'testKey999');
+    assert.strictEqual(res3.pwd, 'wxyz');
+
+    // Mobile link with 1 prefix in surl param
+    const res4 = parseBaiduShareText('https://pan.baidu.com/share/init?surl=1prefixedKey&pwd=1234');
+    assert.strictEqual(res4.surl, 'prefixedKey');
+    assert.strictEqual(res4.pwd, '1234');
+  });
+
+  test('parseBaiduShareText() strips trailing punctuation and symbols adhering to short code', () => {
+    // English comma and Chinese extraction code
+    const res1 = parseBaiduShareText('https://pan.baidu.com/s/1testCode123, 提取码: abcd');
+    assert.strictEqual(res1.surl, 'testCode123');
+    assert.strictEqual(res1.pwd, 'abcd');
+
+    // Period / full stop at the end
+    const res2 = parseBaiduShareText('https://pan.baidu.com/s/1testCode123. 提取码: abcd');
+    assert.strictEqual(res2.surl, 'testCode123');
+    assert.strictEqual(res2.pwd, 'abcd');
+
+    // Chinese fullwidth comma and period
+    const res3 = parseBaiduShareText('链接：https://pan.baidu.com/s/1testCode123，提取码：abcd。');
+    assert.strictEqual(res3.surl, 'testCode123');
+    assert.strictEqual(res3.pwd, 'abcd');
+
+    // Wrapped in parentheses
+    const res4 = parseBaiduShareText('(https://pan.baidu.com/s/1testCode123)');
+    assert.strictEqual(res4.surl, 'testCode123');
+    assert.strictEqual(res4.pwd, '');
+
+    // Mobile link with trailing period
+    const res5 = parseBaiduShareText('https://pan.baidu.com/share/init?surl=mobileCode.');
+    assert.strictEqual(res5.surl, 'mobileCode');
+  });
+
+  test('isValidBaiduUrl() recognizes both standard /s/ and mobile share/init formats', () => {
+    assert.strictEqual(isValidBaiduUrl('https://pan.baidu.com/s/1abc123'), true);
+    assert.strictEqual(isValidBaiduUrl('https://pan.baidu.com/share/init?surl=mock123'), true);
+    assert.strictEqual(isValidBaiduUrl('pan.baidu.com/share/init?surl=mock123'), true);
+    assert.strictEqual(isValidBaiduUrl('https://pan.baidu.com/disk/home'), false);
+    assert.strictEqual(isValidBaiduUrl('https://google.com'), false);
+    assert.strictEqual(isValidBaiduUrl(''), false);
+  });
+
+  test('src/main.js showSmartErrorDialog includes diagnosis and actionable remedies for invalid error', () => {
+    const mainJs = fs.readFileSync(path.resolve(baseDir, '../src/main.js'), 'utf-8');
+
+    // Check for isInvalidShare pattern matching
+    assert.ok(mainJs.includes('isInvalidShare'), 'src/main.js should define isInvalidShare condition');
+    assert.ok(mainJs.includes("msg.toLowerCase() === 'invalid'"), 'src/main.js should check for lowercase invalid');
+
+    // Check for non-quota differentiation
+    assert.ok(mainJs.includes('当前并非每小时 5 个文件的频次配额限制'), 'src/main.js should clarify not quota limit');
+    assert.ok(mainJs.includes('无需更换小号或重置 Sign 凭证'), 'src/main.js should state no need to reset sign');
+
+    // Check for Core 4 diagnostic items
+    assert.ok(mainJs.includes('必须先转存再分享'), 'src/main.js should emphasize save-to-own-netdisk requirement');
+    assert.ok(mainJs.includes('无法直接解析他人分享的原链接'), 'src/main.js should explain cannot resolve others direct link');
+    assert.ok(mainJs.includes('检查 4 位提取码'), 'src/main.js should guide checking 4-digit pwd');
+    assert.ok(mainJs.includes('必须为根目录纯文件'), 'src/main.js should warn against folders');
+    assert.ok(mainJs.includes('原分享已被百度官方屏蔽或失效'), 'src/main.js should check if link expired or blocked');
+
+    // Check for action buttons
+    assert.ok(mainJs.includes('btnDialogClearInput'), 'src/main.js should provide #btnDialogClearInput');
+    assert.ok(mainJs.includes('清空重填'), 'src/main.js should have clear and refill button');
+  });
+
+  test('showSmartErrorDialog renders invalid error modal and clear button resets inputs in DOM', () => {
+    const inputs = {
+      url: { value: 'https://pan.baidu.com/s/1invalid_link', focused: false, focus() { this.focused = true; } },
+      pwd: { value: '9999' },
+    };
+
+    const dialogEl = {
+      open: false,
+      closed: false,
+      innerHTML: '',
+      showModal() { this.open = true; },
+      close() { this.open = false; this.closed = true; },
+      hasAttribute(attr) { return attr === 'open' ? this.open : false; },
+    };
+    const clearBtn = { onclick: null };
+
+    const originalDoc = globalThis.document;
+    let onResetCallbackFired = false;
+
+    globalThis.document = {
+      getElementById(id) {
+        if (id === 'liveDialog') return dialogEl;
+        if (id === 'btnDialogClearInput') return clearBtn;
+        return null;
+      },
+      querySelector(sel) {
+        if (sel === 'input[name="url"]') return inputs.url;
+        if (sel === 'input[name="pwd"]') return inputs.pwd;
+        return null;
+      },
+      querySelectorAll() { return []; },
+      createElement() { return { setAttribute() {}, appendChild() {} }; },
+    };
+
+    try {
+      showSmartErrorDialog('invalid', '解析分享链接失败', () => {
+        onResetCallbackFired = true;
+      });
+
+      // Assert modal content registered clear button handler
+      assert.ok(clearBtn.onclick !== null, '#btnDialogClearInput click listener should be registered');
+
+      // Click clear button
+      clearBtn.onclick();
+
+      // Verify input values cleared and URL input focused
+      assert.strictEqual(inputs.url.value, '', 'URL input should be cleared');
+      assert.strictEqual(inputs.pwd.value, '', 'PWD input should be cleared');
+      assert.strictEqual(inputs.url.focused, true, 'URL input should be focused');
+      assert.strictEqual(state.si.surl, '', 'state.si.surl should be cleared');
+      assert.strictEqual(state.si.pwd, '', 'state.si.pwd should be cleared');
+      assert.strictEqual(onResetCallbackFired, true, 'onResetSuccess callback should be called');
+    } finally {
+      if (originalDoc !== undefined) {
+        globalThis.document = originalDoc;
+      } else {
+        delete globalThis.document;
+      }
+    }
+  });
+
+  test('read.md and README.md document invalid error diagnosis and 4-step checklist', () => {
+    const readDoc = fs.readFileSync(path.resolve(baseDir, '../read.md'), 'utf-8');
+    assert.ok(readDoc.includes('4.3 解析失败提示 "invalid" 错误排查指南'), 'read.md should have 4.3 section');
+    assert.ok(readDoc.includes('必须先转存再分享'), 'read.md should explain save-to-own-netdisk requirement');
+    assert.ok(readDoc.includes('并非触发了每小时 5 个文件的配额限制'), 'read.md should differentiate from quota limit');
+
+    const readme = fs.readFileSync(path.resolve(baseDir, '../README.md'), 'utf-8');
+    assert.ok(readme.includes('解析分享链接时弹窗提示 "invalid" 是什么原因'), 'README.md should include invalid FAQ');
+    assert.ok(readme.includes('必须先转存到自己网盘再分享'), 'README.md should detail must save to own netdisk');
+    assert.ok(readme.includes('确认分享的是纯文件而非文件夹'), 'README.md should warn about folder limitations');
   });
 });

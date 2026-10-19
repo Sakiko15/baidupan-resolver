@@ -120,7 +120,7 @@ export function dialog(content) {
     document.body.appendChild(dlg);
   }
 
-  if (content instanceof HTMLElement) {
+  if (typeof HTMLElement !== 'undefined' && content instanceof HTMLElement) {
     dlg.replaceChildren(content);
   } else {
     const raw = (content ?? '').toString();
@@ -129,15 +129,21 @@ export function dialog(content) {
   }
 
   if (!dlg.open) {
-    dlg.showModal();
-    requestAnimationFrame(() => {
-      document.activeElement?.blur();
-    });
+    if (typeof dlg.showModal === 'function') {
+      dlg.showModal();
+    } else {
+      dlg.open = true;
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        document.activeElement?.blur();
+      });
+    }
   }
 }
 
 export function xdialog(e) {
-  if (e instanceof Event) {
+  if (typeof Event !== 'undefined' && e instanceof Event) {
     e.preventDefault();
     e.stopPropagation();
   }

@@ -194,6 +194,75 @@ export function showSmartErrorDialog(rawMsg = '', title = '请求失败', onRese
     return;
   }
 
+  const isInvalidShare =
+    msg.toLowerCase() === 'invalid' ||
+    msg.toLowerCase().includes('invalid') ||
+    msg.includes('失效') ||
+    msg.includes('不存在') ||
+    msg.includes('分享不存在');
+
+  if (isInvalidShare) {
+    dialog(`
+      <div class="space-y-3.5 py-1 text-left">
+        <div class="flex items-center gap-2 text-amber-600">
+          <i class="bi-exclamation-triangle-fill text-2xl"></i>
+          <h3 class="text-base font-bold text-slate-800">分享链接解析失败 (服务端反馈: ${escapeHtml(msg)})</h3>
+        </div>
+        <div class="text-xs text-slate-600 leading-relaxed bg-amber-50/80 border border-amber-200/80 rounded-lg p-3 space-y-1.5">
+          <p class="font-semibold text-amber-900 flex items-center gap-1.5">
+            <i class="bi-info-circle-fill text-amber-600"></i>
+            <span>诊断提示：当前并非每小时 5 个文件的频次配额限制</span>
+          </p>
+          <p>服务端返回 <code>${escapeHtml(msg)}</code> 说明第三方解析接口向百度网盘开放接口查询分享元数据时校验失败（无效分享），<b>无需更换小号或重置 Sign 凭证</b>。请按以下核心要点排查：</p>
+        </div>
+        <div class="text-xs text-slate-600 space-y-2">
+          <p class="font-medium text-slate-800">核心排查与解决步骤：</p>
+          <ol class="list-decimal list-inside space-y-1.5 pl-0.5 text-slate-600">
+            <li>
+              <b class="text-slate-800">必须先转存再分享（最常见原因）</b>：第三方解析服务<b>无法直接解析他人分享的原链接</b>。请务必先将文件“保存至自己网盘”，在自己网盘中创建新的公开或带密分享链接后再粘贴解析。
+            </li>
+            <li>
+              <b class="text-slate-800">检查 4 位提取码</b>：确认提取码是否填写正确，确认是否有多余字符或前后空格。
+            </li>
+            <li>
+              <b class="text-slate-800">必须为根目录纯文件</b>：接口仅遍历分享链接根目录下的文件；若分享的是<b>文件夹</b>，子目录内的文件将被直接忽略或导致解析异常。
+            </li>
+            <li>
+              <b class="text-slate-800">原分享已被百度官方屏蔽或失效</b>：建议在浏览器无痕窗口中打开分享链接，确认是否提示“分享文件已取消”或“页面不存在”。
+            </li>
+          </ol>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <button type="button" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer transition" onclick="document.getElementById('liveDialog').close()">我知道了</button>
+          <button type="button" id="btnDialogClearInput" class="px-3.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition">
+            <i class="bi-eraser"></i> 清空重填
+          </button>
+        </div>
+      </div>
+    `);
+    const clearBtn = document.getElementById('btnDialogClearInput');
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        xdialog();
+        const urlInput = document.querySelector('input[name="url"]');
+        const pwdInput = document.querySelector('input[name="pwd"]');
+        if (urlInput) {
+          urlInput.value = '';
+          urlInput.focus();
+        }
+        if (pwdInput) {
+          pwdInput.value = '';
+        }
+        state.si.surl = '';
+        state.si.pwd = '';
+        if (typeof onResetSuccess === 'function') {
+          onResetSuccess();
+        }
+      };
+    }
+    return;
+  }
+
   // General error dialog
   dialog(`
     <div class="text-center py-3">
@@ -221,8 +290,8 @@ const reactiveData = new Proxy(box.data, {
 /**
  * Validate Baidu Netdisk share URL
  */
-function isValidBaiduUrl(url = '') {
-  return url.includes('pan.baidu.com/s/');
+export function isValidBaiduUrl(url = '') {
+  return url.includes('pan.baidu.com/s/') || url.includes('pan.baidu.com/share/init');
 }
 
 /**
@@ -233,24 +302,43 @@ export function parseBaiduShareText(text = '') {
   let surl = '';
   let pwd = '';
 
-  // Match URL: pan.baidu.com/s/1[a-zA-Z0-9_-]+ or pan.baidu.com/s/[a-zA-Z0-9_-]+
-  const urlMatch = clean.match(/(?:https?:\/\/)?pan\.baidu\.com\/s\/([a-zA-Z0-9_-]+)/i);
-  if (urlMatch) {
-    surl = urlMatch[1];
-    if (surl.startsWith('1')) {
-      surl = surl.slice(1);
+  // 1. Match mobile/init URL: pan.baidu.com/share/init?...surl=xxxx
+  const initMatch = clean.match(/(?:https?:\/\/)?pan\.baidu\.com\/share\/init[^\s]*[?&]surl=([a-zA-Z0-9_.-]+)/i);
+  if (initMatch) {
+    surl = initMatch[1];
+  } else {
+    // 2. Match standard URL: pan.baidu.com/s/1xxxx or pan.baidu.com/s/xxxx
+    const urlMatch = clean.match(/(?:https?:\/\/)?pan\.baidu\.com\/s\/([a-zA-Z0-9_.-]+)/i);
+    if (urlMatch) {
+      surl = urlMatch[1];
     }
   }
 
-  // Check pwd in query param ?pwd=xxxx
+  if (surl) {
+    // Strip trailing punctuation or brackets that might adhere to the share code
+    surl = surl.replace(/[.,;:!?，。！？)\]>》）/]+$/, '');
+    if (surl.startsWith('1')) {
+      surl = surl.slice(1);
+    }
+    surl = surl.replace(/[.,;:!?，。！？)\]>》）/]+$/, '');
+  }
+
+  // Check pwd in query param ?pwd=xxxx or &pwd=xxxx
   const pwdParamMatch = clean.match(/[?&]pwd=([a-zA-Z0-9]{4})/i);
   if (pwdParamMatch) {
     pwd = pwdParamMatch[1];
   } else {
-    // Check pwd in text like 提取码: abcd / 密码: abcd
-    const pwdTextMatch = clean.match(/(?:提取码|密码|pwd)[:：\s]*([a-zA-Z0-9]{4})/i);
+    // Check pwd in text like 提取码: abcd / 密码: abcd / 访问码: abcd / pwd: abcd
+    const pwdTextMatch = clean.match(/(?:提取码|密码|访问码|pwd|code)[:：\s【\(\[]*([a-zA-Z0-9]{4})/i);
     if (pwdTextMatch) {
       pwd = pwdTextMatch[1];
+    }
+  }
+
+  if (pwd) {
+    pwd = pwd.trim().replace(/^[:：\s]+|[:：\s]+$/g, '');
+    if (pwd.length > 4) {
+      pwd = pwd.slice(0, 4);
     }
   }
 
@@ -660,14 +748,14 @@ function initHomePage() {
 
     const rawUrl = urlInput.value.trim();
     if (!isValidBaiduUrl(rawUrl)) {
-      dialog('请输入有效的百度网盘分享链接 (https://pan.baidu.com/s/...)');
+      dialog('请输入有效的百度网盘分享链接 (https://pan.baidu.com/s/... 或 pan.baidu.com/share/init?surl=...)');
       return;
     }
 
     const { surl, pwd } = parseBaiduShareText(rawUrl);
     const formPwd = pwdInput.value.trim();
 
-    state.si.surl = surl || cut(rawUrl, '/s/1', '?') || cut(rawUrl, '/s/', '?');
+    state.si.surl = surl || cut(rawUrl, '/s/1', '?') || cut(rawUrl, '/s/', '?') || cut(rawUrl, 'surl=', '&') || cut(rawUrl, 'surl=', ' ');
     state.si.pwd = formPwd || pwd;
     state.si.site = location.hostname;
 
