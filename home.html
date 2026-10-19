@@ -1,0 +1,25 @@
+<div class="center flex-col gap-6">
+  <div class="text-center" name="tip">每小时可解析5个任意大小文件 <a href="assets/dupan.zip" download>下载源码自己部署</a></div>
+  <form class="search leading-12 h-12 w-full" method="dialog">
+    <input class="flex-auto indent-1" name="url" type="text" placeholder="请输入自己的百度网盘分享链接">
+    <i class="bi-lock"></i>
+    <input class="w-15 px-1" name="pwd" type="text" placeholder="提取码">
+    <button name="dupan" type="button"><i class="bi-search"></i> 打开</button>
+  </form>
+  <div class="min-h-64 w-full">
+    <table class="simple w-full">
+      <colgroup>
+        <col class="w-26">
+        <col class="w-4">
+        <col>
+      </colgroup>
+      <tbody class="font-mono" data-json="files">
+        <tr>
+          <td class="text-right">[size]<i class="ml-[2px]">MB</i></td>
+          <td><i class="bi-download"></i></td>
+          <td class="text-left px-0" data-fid="[fid]">[name]</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
