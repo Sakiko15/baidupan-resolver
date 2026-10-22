@@ -603,23 +603,23 @@ export function showDownloadOptionsModal(fid, fileName, fileSize) {
       </div>
 
       <div class="space-y-2 pt-1">
-        <button type="button" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-sm font-semibold rounded-lg shadow-sm transition" id="btnMotrixPush">
+        <button type="button" class="w-full flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition" id="btnMotrixPush">
           <i class="bi-rocket-takeoff text-base"></i>
           <span>推送到 Motrix / Aria2 (推荐·自动携带 UA)</span>
         </button>
 
-        <div class="grid grid-cols-2 gap-2">
-          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnBrowserDl" title="需注意 UA 校验限制">
-            <i class="bi-cloud-download text-sm text-blue-600"></i> 浏览器直接下载
+        <div class="grid grid-cols-2 gap-1.5 sm:gap-2">
+          <button type="button" class="flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] sm:text-xs font-medium rounded-lg transition" id="btnBrowserDl" title="需注意 UA 校验限制">
+            <i class="bi-cloud-download text-sm text-blue-600"></i> <span>浏览器直接下载</span>
           </button>
-          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnCopyIdm">
-            <i class="bi-download text-sm text-emerald-600"></i> 复制 IDM 参数
+          <button type="button" class="flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] sm:text-xs font-medium rounded-lg transition" id="btnCopyIdm">
+            <i class="bi-download text-sm text-emerald-600"></i> <span>复制 IDM 参数</span>
           </button>
-          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnCopyCurl">
-            <i class="bi-terminal text-sm text-purple-600"></i> 复制 cURL 命令
+          <button type="button" class="flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] sm:text-xs font-medium rounded-lg transition" id="btnCopyCurl">
+            <i class="bi-terminal text-sm text-purple-600"></i> <span>复制 cURL 命令</span>
           </button>
-          <button type="button" class="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg transition" id="btnConfigAria2">
-            <i class="bi-gear text-sm text-slate-600"></i> 配置 Aria2 RPC
+          <button type="button" class="flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] sm:text-xs font-medium rounded-lg transition" id="btnConfigAria2">
+            <i class="bi-gear text-sm text-slate-600"></i> <span>配置 Aria2 RPC</span>
           </button>
         </div>
       </div>

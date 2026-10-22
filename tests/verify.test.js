@@ -1061,3 +1061,46 @@ describe('15. Nginx Charset UTF-8, Hash Routing & Self-Healing Defense', () => {
     assert.ok(css.includes('.status-dot'), 'style.css must have .status-dot');
   });
 });
+
+describe('16. Multi-Device Responsive Layout & Viewport Adaptation Verification', () => {
+  test('index.html specifies viewport-fit=cover and expanded responsive container max-width', () => {
+    const indexHtml = fs.readFileSync(path.resolve(baseDir, '../index.html'), 'utf-8');
+    assert.ok(indexHtml.includes('viewport-fit=cover'), 'index.html must include viewport-fit=cover for notch display');
+    assert.ok(indexHtml.includes('max-w-3xl lg:max-w-4xl'), 'index.html main must support lg:max-w-4xl responsive width');
+  });
+
+  test('src/style.css integrates safe-area-inset and adaptive modal dimensions', () => {
+    const css = fs.readFileSync(path.resolve(baseDir, '../src/style.css'), 'utf-8');
+    assert.ok(css.includes('env(safe-area-inset-top'), 'style.css must include safe-area-inset-top padding');
+    assert.ok(css.includes('env(safe-area-inset-bottom'), 'style.css must include safe-area-inset-bottom padding');
+    assert.ok(css.includes('dialog#liveDialog'), 'style.css must style dialog#liveDialog');
+    assert.ok(!css.includes('min-width: 20rem;'), 'style.css must eliminate rigid min-width: 20rem from liveDialog');
+    assert.ok(css.includes('calc(100% - 1.5rem)'), 'liveDialog must use responsive width calc(100% - 1.5rem)');
+    assert.ok(css.includes('max-height: calc(100dvh - 2rem)'), 'liveDialog must set safe max-height calc(100dvh - 2rem)');
+    assert.ok(css.includes('overflow-y: auto'), 'liveDialog must allow vertical scrolling when overflowing');
+  });
+
+  test('form.search supports responsive mobile double-row and desktop single-row layout', () => {
+    const home = fs.readFileSync(path.resolve(baseDir, '../home.html'), 'utf-8');
+    const css = fs.readFileSync(path.resolve(baseDir, '../src/style.css'), 'utf-8');
+
+    assert.ok(home.includes('class="search flex flex-col sm:flex-row'), 'home.html form.search must use flex-col on mobile and sm:flex-row on desktop');
+    assert.ok(home.includes('name="url"'), 'home.html must include input[name=url]');
+    assert.ok(home.includes('name="pwd"'), 'home.html must include input[name=pwd]');
+    assert.ok(home.includes('name="dupan"'), 'home.html must include button[name=dupan]');
+    assert.ok(css.includes('form.search button[name="dupan"]'), 'style.css must support nested button[name=dupan] selector');
+    assert.ok(css.includes('min-height: 2.625rem'), 'button[name=dupan] must provide comfortable mobile touch target (>=42px)');
+  });
+
+  test('Table containers provide horizontal scroll safety and minimum width constraints', () => {
+    const home = fs.readFileSync(path.resolve(baseDir, '../home.html'), 'utf-8');
+    const history = fs.readFileSync(path.resolve(baseDir, '../history.html'), 'utf-8');
+    const css = fs.readFileSync(path.resolve(baseDir, '../src/style.css'), 'utf-8');
+
+    assert.ok(home.includes('id="filesTableContainer" class="hidden min-h-64 w-full overflow-x-auto"'), 'filesTableContainer must have overflow-x-auto');
+    assert.ok(home.includes('min-w-[480px] sm:min-w-full'), 'home table must have min-w-[480px] safety constraint');
+    assert.ok(history.includes('id="historyTableContainer" class="min-h-64 w-full overflow-x-auto"'), 'historyTableContainer must have overflow-x-auto');
+    assert.ok(history.includes('min-w-[520px] sm:min-w-full'), 'history table must have min-w-[520px] safety constraint');
+    assert.ok(css.includes('-webkit-overflow-scrolling: touch'), 'style.css must configure smooth touch scrolling for table containers');
+  });
+});

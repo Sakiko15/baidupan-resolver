@@ -17,9 +17,9 @@
   </div>
 
   <!-- Notice & Status Card -->
-  <div class="w-full glass-card p-4 text-xs text-slate-600 space-y-3 shadow-xs">
+  <div class="w-full glass-card p-3.5 sm:p-4 text-xs text-slate-600 space-y-3 shadow-xs">
     <!-- Top toolbar of card -->
-    <div class="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-200/70">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-2.5 border-b border-slate-200/70">
       <div class="flex items-center gap-2 font-medium text-slate-700">
         <i class="bi-shield-check text-blue-600 text-sm"></i>
         <span class="text-xs font-semibold text-slate-800">解析规范与服务状态</span>
@@ -88,34 +88,45 @@
   </div>
 
   <!-- Search & Link Form -->
-  <form class="search leading-12 h-14 w-full" method="dialog">
-    <i class="bi-link-45deg text-xl text-blue-500 pl-2 shrink-0"></i>
-    <input class="flex-auto indent-1 text-sm font-sans" name="url" type="text" placeholder="粘贴百度网盘分享链接（支持自动识别提取码）" autocomplete="off" spellcheck="false">
-    <button type="button" id="btnClearUrl" class="btn-clear-input hidden mr-1 shrink-0" title="清空链接">
-      <i class="bi-x-circle-fill text-sm"></i>
-    </button>
-    <div class="h-6 w-px bg-slate-200 mx-1 shrink-0"></div>
-    <i class="bi-key text-slate-400 shrink-0"></i>
-    <input class="w-16 px-1 text-sm font-mono text-center shrink-0" name="pwd" type="text" placeholder="提取码" maxlength="6" autocomplete="off">
-    <button name="dupan" type="button" class="shrink-0" title="点击解析文件列表；右键点击配置 Motrix / Aria2 RPC">
-      <i class="bi-search"></i> 打开
-    </button>
+  <form class="search flex flex-col sm:flex-row sm:items-center sm:h-14 w-full" method="dialog">
+    <!-- Row 1: URL input with link icon & clear button -->
+    <div class="flex items-center flex-1 min-w-0 w-full sm:w-auto h-11 sm:h-full">
+      <i class="bi-link-45deg text-xl text-blue-500 pl-1.5 sm:pl-2 shrink-0"></i>
+      <input class="flex-auto min-w-0 indent-1 text-sm font-sans" name="url" type="text" placeholder="粘贴百度网盘分享链接（支持自动识别提取码）" autocomplete="off" spellcheck="false">
+      <button type="button" id="btnClearUrl" class="btn-clear-input hidden mr-1 shrink-0" title="清空链接">
+        <i class="bi-x-circle-fill text-sm"></i>
+      </button>
+    </div>
+
+    <!-- Divider: hidden on mobile, vertical line on desktop -->
+    <div class="hidden sm:block h-6 w-px bg-slate-200 mx-1 shrink-0"></div>
+
+    <!-- Row 2: Password input group & Open button -->
+    <div class="flex items-center justify-between sm:justify-start w-full sm:w-auto gap-2 sm:gap-0 pt-2 sm:pt-0 border-t border-slate-100 sm:border-t-0">
+      <div class="flex items-center flex-1 sm:flex-initial bg-slate-50 sm:bg-transparent rounded-lg sm:rounded-none px-2 sm:px-0 py-1 sm:py-0 border border-slate-200/60 sm:border-none">
+        <i class="bi-key text-slate-400 shrink-0 text-base"></i>
+        <input class="flex-1 min-w-0 sm:flex-initial sm:w-16 px-1.5 sm:px-1 text-sm font-mono text-center sm:shrink-0" name="pwd" type="text" placeholder="提取码" maxlength="6" autocomplete="off">
+      </div>
+      <button name="dupan" type="button" class="shrink-0" title="点击解析文件列表；右键点击配置 Motrix / Aria2 RPC">
+        <i class="bi-search"></i> 打开
+      </button>
+    </div>
   </form>
 
   <!-- Quick Action & Sample Link -->
-  <div class="w-full flex items-center justify-between text-[11px] text-slate-500 px-1 -mt-2">
+  <div class="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 text-[11px] text-slate-500 px-1 -mt-2">
     <div class="flex items-center gap-1.5">
-      <i class="bi-lightbulb text-amber-500"></i>
+      <i class="bi-lightbulb text-amber-500 shrink-0"></i>
       <span>提示：支持带提取码的整段文本，粘贴即可自动提取。</span>
     </div>
-    <button type="button" id="btnFillSampleUrl" class="text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 cursor-pointer font-medium">
+    <button type="button" id="btnFillSampleUrl" class="text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1 cursor-pointer font-medium self-start sm:self-auto">
       <i class="bi-magic"></i><span>填入示例链接</span>
     </button>
   </div>
 
   <!-- Empty State Guidance Card -->
-  <div id="filesEmptyState" class="w-full glass-card p-8 flex flex-col items-center justify-center text-center space-y-4">
-    <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-blue-200/50 flex items-center justify-center text-blue-600 text-3xl shadow-xs">
+  <div id="filesEmptyState" class="w-full glass-card p-5 sm:p-8 flex flex-col items-center justify-center text-center space-y-4">
+    <div class="w-14 sm:w-16 h-14 sm:h-16 rounded-2xl bg-gradient-to-tr from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-blue-200/50 flex items-center justify-center text-blue-600 text-2xl sm:text-3xl shadow-xs">
       <i class="bi-cloud-download"></i>
     </div>
     <div class="space-y-1">
@@ -124,22 +135,22 @@
         在上方输入框粘贴百度网盘转存分享链接并点击「打开」，即可解析高速直链并一键推送到 Motrix。
       </p>
     </div>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-lg pt-2 text-left">
-      <div class="p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-2.5">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 w-full max-w-lg pt-2 text-left">
+      <div class="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-2.5">
         <span class="flex h-5 w-5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold items-center justify-center shrink-0">1</span>
         <div class="space-y-0.5">
           <p class="text-xs font-semibold text-slate-700">转存并分享</p>
           <p class="text-[10px] text-slate-500">将文件转存至自身网盘根目录并创建分享</p>
         </div>
       </div>
-      <div class="p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-2.5">
+      <div class="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-2.5">
         <span class="flex h-5 w-5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold items-center justify-center shrink-0">2</span>
         <div class="space-y-0.5">
           <p class="text-xs font-semibold text-slate-700">粘贴并打开</p>
           <p class="text-[10px] text-slate-500">支持整段文字粘贴，自动提取提取码</p>
         </div>
       </div>
-      <div class="p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-2.5">
+      <div class="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-2.5">
         <span class="flex h-5 w-5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold items-center justify-center shrink-0">3</span>
         <div class="space-y-0.5">
           <p class="text-xs font-semibold text-slate-700">一键极速下载</p>
@@ -150,8 +161,13 @@
   </div>
 
   <!-- Resolved Files Table Container -->
-  <div id="filesTableContainer" class="hidden min-h-64 w-full">
-    <table class="simple w-full text-slate-700">
+  <div id="filesTableContainer" class="hidden min-h-64 w-full overflow-x-auto">
+    <!-- Mobile Horizontal Scroll Hint -->
+    <div class="sm:hidden flex items-center justify-between text-[11px] text-slate-500 px-2 py-1 mb-1.5 bg-slate-100/70 rounded-lg border border-slate-200/60">
+      <span class="flex items-center gap-1"><i class="bi-arrow-left-right text-blue-500"></i>左右滑动查看操作</span>
+      <span class="text-[10px] text-slate-400 font-mono">滑动表格 &rarr;</span>
+    </div>
+    <table class="simple w-full text-slate-700 min-w-[480px] sm:min-w-full">
       <thead class="text-xs uppercase bg-slate-100/80 text-slate-500 border-b border-slate-200">
         <tr>
           <th class="py-2.5 px-3 text-right w-24 sm:w-28 font-mono">大小</th>

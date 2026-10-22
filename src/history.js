@@ -233,7 +233,7 @@ export function showHistoryMoreModal(item) {
       </div>
     </div>
 
-    <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between">
+    <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
       <button type="button" id="btnModalPushMotrix" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-medium inline-flex items-center gap-1.5 transition">
         <i class="bi-rocket-takeoff"></i><span>推送到 Motrix</span>
       </button>
